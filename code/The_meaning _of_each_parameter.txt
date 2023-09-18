@@ -1,0 +1,44 @@
+以lvxm算法，hengsheng数据集为例  2022/10/23 by chen
+         run_lvxm
+instance        用来判断使用的数据集
+rep             迭代的次数
+size            数据集大小
+N               种群大小
+T               邻居大小
+gen             与迭代次数不同，这里只生成子代的代数
+sigma           用于判断父母的选择，从邻居中还是从整个种群中
+nr              更新种群的上限，在生成子代后，用子代来替换种群中个体的次数
+par[]           内含四个元素，在对子代用变异算子时会用到，par[0]=alpha,par[1]=beta,par[2]=pm,par[3]=etam 就是参数
+
+       moead_framework
+t               用于判断当前代数
+count           用于收敛性判断
+temp            用于收敛性判断相关
+_               资产总量=数据集大小
+r               文件中的第一列    大小[31,1]  暂不知道意义
+s               文件中的第二列    大小[31,1]  暂不知道意义
+c               大小[31,31]  暂不知道意义
+lb              31行1列全为0  [31,1] 用于repair函数
+ub              31行1列全为0  [31,1] 暂不知道意义
+port            传入evaluate函数 用于后面objective'函数计算
+mp              含2000个元素的数组 与vp共同组成PF面的[return,risk]
+vp              含2000个元素的数组
+B               记录种群中每个个体的邻居，每个个体有20个邻居，以编号的形式记录
+P               包含100个array，每个array[31,1]
+objs            包含100个array，每个arry记录了种群中每个个体的[return,risk]
+F1              return最小的极值点
+F2              risk最小的极值点
+indicator_value 记录反转世代距离igd
+b               b决定了父母的编号,是一个数组
+y               子代
+obj_y           子代的[return,risk]
+M_y             子代的return
+V_y             子代的risk
+w               权重向量  
+Z               参考点  100个元素的数组 每个元素是一个[return,risk]
+update_count    用于和nr比较，记录当前种群更新的次数
+bi              b中的一个元素，代表种群中个体的编号
+zk              随机选择的Z中的一个元素
+obj_k           objs中的一个随机元素
+M_k             随机元素的return
+V_k             随机元素的risk

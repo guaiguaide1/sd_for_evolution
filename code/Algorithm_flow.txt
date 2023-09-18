@@ -1,0 +1,49 @@
+以lvxm算法为例
+
+
+optimize()
+初始化t, count, temp
+根据选择的数据集设置问题域参数 set_problem()->read_file()读取数据集的总资产 均值 标准差 协方差->生成lb，ub供后续使用->将evaluate()函数作为参数传给port->pf()读取数据集的[return,risk]->返回值
+neighbor()决定种群个体中的邻居，生成B，B是一个100*20的含有个体编号的数组
+population()初始化种群 随机生成100个array数组，每个数组的元素在0-1之间，数组之和为1，返回P
+objective()计算每个个体的[return,risk],返回objs
+extreme_points()计算极值点，返回F1,F2
+igd()计算IGD metric  PF面上的解和最优解集之间的最小欧式距离，返回indicator_value
+当t<gen时:主循环用于不断生成下一代种群
+    100个for循环:用于生成100个子代
+        当随机数小于设定值:
+            从邻居中选择父母
+        否则:
+            从整个种群中选择父母
+        operator()根据传入的参数选择对应的算子，生成子代，返回y
+        记录实验向量长度，返回len_trial
+        objective()计算子代的[return,risk]，返回obj_y
+        M_y, V_y 子代的return，risk
+        update_extreme() 根据子代情况看是否需要更新极值点
+        weight_vector()计算权重向量，返回w
+        utopia_points()计算理想点，返回z
+        update_count = 0 设置更新上限，最多20次
+        打乱b中元素
+        100或20个for循环:用于用生成的子代不断去替换种群中比他差的个体 bi是一个随机的个体编号
+            获得随机选择个体的理想点，返回zk
+            获得随机个体的[return,risk]，返回obj_k
+            M_k, V_k   return,risk
+            如果子代比随机个体更好 :  to_update()
+                用子代去替换随机个体
+                同时替换[return,risk]
+                更新计数器+1
+            如果更新计数器大于20:
+                退出循环
+        记录成功更新的次数trial_len文件供讨论使用
+    代数+1 t
+    记录种群的变化情况pop文件供讨论使用
+    计算新种群的IGD
+    if np.abs(indicator_value - temp) >= 1e-05:  # 收敛性判断 
+        temp = indicator_value
+        count = 0
+    else:
+        count += 1
+    if count >= cgen and cflag is True:  
+        break
+返回objs[return,risk]
+
