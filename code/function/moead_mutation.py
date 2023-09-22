@@ -144,16 +144,16 @@ def lvx(P, i, b, lb, ub, par):
 # 2020-11-26 frank
 
 # adj_lvxm-多项式变异算子(5个参数)
-def adj_lvxm(P, i, b, lb, ub, par):  # i: 当前要变异的个体的索引
+def adj_lvxm(P, i, b, lb, ub, par):
     alpha, beta, pm, etam, epsilon = par[0], par[1], par[2], par[3], par[4]
     np.random.shuffle(b)
-    p1 = P[i]   # （31,1)
-    p2 = P[b[0]]  # 从邻居中随机选择一个个体p2   (31, 1)
-    y = p1 * epsilon + alpha * levy(beta, len(p1)) * (p1 - p2) * (1 - epsilon)  # 公式8    y=（31， 1）
-    y = repair(y, lb, ub)# 对变异后的个体 `y` 进行修复操作，确保它在上下界 `lb` 和 `ub` 内。
-    y = poly_mutation(y, lb, ub, etam, pm)  # 对变异后的个体 `y` 进行多项式变异操作，但这次使用参数 `etam` 和 `pm` 来控制多项式变异
-    y = repair(y, lb, ub)  # 再次对变异后的个体 `y` 进行修复操作，确保它在上下界 `lb` 和 `ub` 内
-    return y   # （31， 1)
+    p1 = P[i]
+    p2 = P[b[0]]
+    y = p1 * epsilon + alpha * levy(beta, len(p1)) * (p1 - p2) * (1 - epsilon)
+    y = repair(y, lb, ub)
+    y = poly_mutation(y, lb, ub, etam, pm)
+    y = repair(y, lb, ub)
+    return y
 
 
 # adj_lvx-多项式变异算子(3个参数)
@@ -168,8 +168,8 @@ def adj_lvx(P, i, b, lb, ub, par):
 ##########################################################
 
 
-# 辅助-多项式变异算子    多项式变异是一种用于优化算法的变异策略，它通常用于在搜索空间中引入多样性，以帮助算法探索更广泛的解空间
-def poly_mutation(p, lb, ub, etam, pm):  # p.shape=(31,1)   etam=20,   pm=0.03226
+# 辅助-多项式变异算子
+def poly_mutation(p, lb, ub, etam, pm):
     for i in range(len(p)):
         if np.random.uniform(0, 1) < pm:
             x = p[i]
@@ -180,13 +180,13 @@ def poly_mutation(p, lb, ub, etam, pm):  # p.shape=(31,1)   etam=20,   pm=0.0322
             else:
                 sigmaq = 1 - (2 * (1 - myu)) ** (1 / (etam + 1))
             p[i] = x + sigmaq * (xu - xl)
-    return p   # 多项式变异会导致个体中的某些决策变量值发生改变，从而可能破坏原来的和为1的性质; 只是随机挑选某些位置上的值进行变异，这个变异的概率比较小啦，只有0.03226
+    return p
 
 
-# 辅助-LEVY函数.    这个函数的目的是生成服从 Lévy 分布的随机数，通常用于优化算法中的多项式变异等操作。
-def levy(beta, n):   # beta=0.3, n=len(p1)=31
+# 辅助-LEVY函数
+def levy(beta, n):
     num = G(1 + beta) * np.sin(np.pi * beta / 2)
-    den = G((1 + beta) / 2) * beta * 2 ** ((beta - 1) / 2)  # 公式6
+    den = G((1 + beta) / 2) * beta * 2 ** ((beta - 1) / 2)
     sigma_u, sigma_v = (num / den) ** (1 / beta), 1
     u = np.random.normal(0, sigma_u, size=n)
     v = np.random.normal(0, sigma_v, size=n)

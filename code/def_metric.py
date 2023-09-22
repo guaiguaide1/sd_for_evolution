@@ -5,24 +5,24 @@ import numpy as np
 ######################################################################
 
 
-# 计算指标辅助调用.     该函数的目的是找出 A 中的非支配集合（Nondominated Set）
-def ndset(A):  # A.shape=(100, 2)
+# 计算指标辅助调用
+def ndset(A):
     ndsets = []
-    for i in range(len(A)):  # 评判标准，Mi,Vi都应该越小越好，越小越优秀
+    for i in range(len(A)):
         Mi, Vi = A[i][0], A[i][1]
         is_dominated = False
         for j in range(len(A)):
             Mj, Vj = A[j][0], A[j][1]
-            if (Mi >= Mj and Vi > Vj) or (Mi > Mj and Vi >= Vj):  # 所以，一旦有(Mi >= Mj and Vi > Vj) or (Mi > Mj and Vi >= Vj)
-                is_dominated = True    # 则说明(Mi, Vi)会被其他解支配，也就是不是最优的
+            if (Mi >= Mj and Vi > Vj) or (Mi > Mj and Vi >= Vj):
+                is_dominated = True
                 break
         if not is_dominated:
             ndsets.append(A[i])
-    return ndsets     # len(ndsets）=5   [array([-0.0035831 ,  0.00099589]), array([-0.00372113,  0.00102084])......]
+    return ndsets
 
 
 # 世代距离
-def gd(A, M_P, V_P):   # A.shape=(100,2)   M_P.shape=(2000,1)=V_P.shape
+def gd(A, M_P, V_P):
     A = ndset(A)
     M_A, V_A = [], []
     for i in A:
@@ -40,18 +40,18 @@ def gd(A, M_P, V_P):   # A.shape=(100,2)   M_P.shape=(2000,1)=V_P.shape
     return d_avg
 
 
-# 反转世代距离     A.shape =(100, 2)代表把种群里面的初始所有解都求一遍(return, risk)
-def igd(A, M_P, V_P):    # 
-    A = ndset(A)  #找出 A 中的非支配集合（Nondominated Set）相当于找出种群中初始解里面最优的[return, risk]的集合 len(ndsets）=5   [array([-0.0035831 ,  0.00099589]), array([-0.00372113,  0.00102084])......]
-    M_A, V_A = [], []    # [M_A,V_A]: 当前种群里面的最优解的[return, risk]的集合
+# 反转世代距离
+def igd(A, M_P, V_P):
+    A = ndset(A)
+    M_A, V_A = [], []
     for i in A:
         M_A.append(-i[0])
         V_A.append(i[1])
     d_sum = 0
-    for i in range(len(M_P)):  # [M_P, V_P]: 当前真实 Pareto 前沿解
+    for i in range(len(M_P)):
         d_min = 9999
         for j in range(len(M_A)):
-            d = ((M_P[i] - M_A[j]) ** 2 + (V_P[i] - V_A[j]) ** 2) ** 0.5  # 欧式距离
+            d = ((M_P[i] - M_A[j]) ** 2 + (V_P[i] - V_A[j]) ** 2) ** 0.5
             if d < d_min:
                 d_min = d
         d_sum += d_min
