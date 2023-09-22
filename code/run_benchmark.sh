@@ -2,24 +2,27 @@
 
 benchmarks=("hangseng" "dax" "ftse" "sp" "nikkei")
 # 分别做五个测试集上的两个实验对比测试
-mkdir ./result/${benchmarks[$1-1]}
-mkdir ./result/${benchmarks[$1-1]}/GAN-adjlvxm
-mkdir ./result/${benchmarks[$1-1]}/lvxm
-mkdir ./result/${benchmarks[$1-1]}/adjlvxm
-mkdir ./result/${benchmarks[$1-1]}/dem
-mkdir ./result/${benchmarks[$1-1]}/de
-mkdir ./result/${benchmarks[$1-1]}/ga
-mkdir ./result/${benchmarks[$1-1]}/nsga2
-mkdir ./result/${benchmarks[$1-1]}/adjlvx
-mkdir ./result/${benchmarks[$1-1]}/lvx
-mkdir ./result/${benchmarks[$1-1]}/unif
-mkdir ./result/${benchmarks[$1-1]}/norm
+mkdir -p ./result/${benchmarks[$1-1]}
+mkdir -p ./result/${benchmarks[$1-1]}/GAN-adjlvxm
+mkdir -p ./result/${benchmarks[$1-1]}/lvxm
+mkdir -p ./result/${benchmarks[$1-1]}/adjlvxm
+mkdir -p ./result/${benchmarks[$1-1]}/dem
+mkdir -p ./result/${benchmarks[$1-1]}/de
+mkdir -p ./result/${benchmarks[$1-1]}/ga
+mkdir -p ./result/${benchmarks[$1-1]}/nsga2
+mkdir -p ./result/${benchmarks[$1-1]}/adjlvx
+mkdir -p ./result/${benchmarks[$1-1]}/lvx
+mkdir -p ./result/${benchmarks[$1-1]}/unif
+mkdir -p ./result/${benchmarks[$1-1]}/norm
 
 # 控制选择的10个测试种类 将print的结果记录到igd文件
 #python run_only_GAN.py $1 >> ./result/${benchmarks[$1-1]}/GAN-adjlvxm/igd.txt
 #echo Finish GAN-adjlvxm on $1
 
-python run_GAN-adjlvxm.py $1 >> ./result/${benchmarks[$1-1]}/GAN-adjlvxm/igd.txt
+# python run_GAN-adjlvxm.py $1 >> ./result/${benchmarks[$1-1]}/GAN-adjlvxm/igd.txt    # 之前这一行xwf
+python run_APG-SMOEA.py $1 >> ./result/${benchmarks[$1-1]}/GAN-adjlvxm/igd.txt
+# python run_APG-SMOEA.py 1 >> ./result/hangseng/GAN-adjlvxm/igd.txt
+
 echo Finish GAN-adjlvxm on $1
 
 #python run_lvxm.py $1 >> ./result/${benchmarks[$1-1]}/lvxm/igd.txt
