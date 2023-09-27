@@ -12,8 +12,10 @@ from function.initial_tool import objective
 from function.nsga2_tool import fast_non_dominated_sort 
 from function.repair_tool import repair
 from function.GAN_model import GAN
+from function.Diffusion_model import Diffusion
 import sys
 import random
+import os 
 
 from def_metric import igd
 
@@ -84,7 +86,8 @@ def array_merge(F):  # 数组融合，F = [[1, 7, 16, 61, 68, 78, 90], [43, 94, 
         index = index + F[i]
     return index
 
-def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cgen):  # N是种群大小, N=100   num=0,迭代的次数，即第几次迭代
+def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cgen, Diff):  # N是种群大小, N=100   num=0,迭代的次数，即第几次迭代
+    # Diff=0 : 用Gan来训练     Diff=1:用Diff来训练
     t, count, temp = 0, 0, 0   
     _, r, s, c, lb, ub, port, mp, vp = set_problem(instance)# _=31    [mp,vp]:包含不同解的目标函数值, return  risk ,应该是用来进行训练的？？
     B = neighbor(N, T)   # N=100:种群大小   T=20：邻居的个数      B:(100, 20)   # 初始化每个个体的邻居列表，以便后续在群体内进行交互和合作。从左到右，依次为从近到远。比如对于个体3的邻居：[3,2,4,1,5,0,6...]说明个体3离得最近，个体2是第二近，个体4是第三近
@@ -97,6 +100,7 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
 
     F1, F2 = extreme_point(objs)   #求出初始所有解的(return, risk)包含负收益最小的(return, risk)=F1=[-0.00401471,  0.00114329]     包含risk最小的(return, risk) F2=[-0.0035831 ,  0.00099589]这个函数用于从一个多目标优化问题的解集中找到最小收益和最小风险所对应的解（极值点），以便在多目标优化中进行进一步的分析或决策。
     net = GAN(_, 8, 0.0001, 200, _)    # _=31
+    Diffnet = Diffusion(_, 0.0001, 400)  # dim, lr, epoch, batchsize.default=32
     indicator_value = igd(objs, mp, vp)   # obj=(100, 2)  mp=(2000, 1), vp=(2000,1)    igd: 指标值，是一个实数，越小越好，越小说明种群里的解得到的[return, risk]就越接近Pareto front解
     print("{}\t{}".format(t, indicator_value))
     
@@ -123,20 +127,38 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
             else :
 
                 if k % 20 == 0 or k == 0:
-                    label = np.zeros((N, 1))    # N=100 种群的大小  label.shape=(100,1)
-                    F, rank = fast_non_dominated_sort(objs)  # 快速非支配排序 就是为了得到比较好的[return,risk]，将比较好的解进行排序  objs.shape=(100, 2)代表把种群里面的初始所有解都求一遍(return, risk)
-                    index = array_merge(F)   # 数组融合，将F里层的[]去掉
-                    index = index[:10]       # 取前面10个比较好的[return,risk],这个index就是对应的比较好的[return, risk]的索引
-                    P_100 = data_format_transform(P, _)   # P_100.shape = (100, 31)   # _=31   就是简单进行了数据格式的转换，之前的P.shape=(100, 31, 1)
-                    label[index, :] = 1   #  label.shape=(100,1)，把index中比较好的解的索引位置的label设置为1
-                    ref_dec = P_100[index, :]    # 取出比较好的[return, risk]对应的 解,即种群中的个体 ,len(ref_dec)=10,  len(ref_dec[0])   ref_dec.shape=(10,31)
-                    pool = ref_dec / np.tile(upper, (10, 1))  # upper=(1, 31)   tile(upper, (10,1)).shape=(10, 31)   np.tile 函数用于创建一个重复指定数组内容的新数组。具体而言，np.tile(upper, (10, 1)) 将 upper 数组沿着第一个维度（行）重复10次，并沿着第二个维度（列）重复1次。
-                    pop_dec = P_100    # pop_dec是格式转换后的种群解  pop_dec.shape=(100, 31)
-                    input_dec = (pop_dec - np.tile(lower, (np.shape(pop_dec)[0], 1))) / np.tile(upper - lower,(np.shape(pop_dec)[0], 1))
-                    if t % 100 == 0 or t == 0:   # input_dec.shape=(100, 31)  label=(100,1)  label里面的某些位置为1表示这个index对应的解比较好
-                        net.train(input_dec, label, pool)
+                    F, rank = fast_non_dominated_sort(objs)
+                    index = array_merge(F)
+                    index0 = index[:10]   #   用于Gan和diffusion的榜样
+                    index1 = index[:30]   #   取前32个用于diffusion的训练
+                    P_100 = data_format_transform(P, _)
+                    pop_dec = P_100
 
-                    off = net.generate(ref_dec / np.tile(upper, (np.shape(ref_dec)[0], 1)), N) * np.tile(upper, (N, 1))   # (100, 31)
+                    if Diff: # 1: Diff
+                        ref_dec = P_100[index0, :]
+                        pool = ref_dec / np.tile(upper, (10, 1))
+                        input_dec = P_100[index1, :]#   取前32个用于diffusion的训练
+                        input_dec = (input_dec - np.tile(lower, (np.shape(input_dec)[0], 1))) / np.tile(upper - lower,(np.shape(input_dec)[0], 1))
+                        if t % 100 == 0 or t == 0:
+                            Diffnet.train(input_dec, pool)
+                        
+                        off = Diffnet.generate(ref_dec / np.tile(upper, (np.shape(ref_dec)[0], 1)), N) * np.tile(upper, (N, 1))
+                    
+                    else: #0: Gan
+                        label = np.zeros((N, 1))    # N=100 种群的大小  label.shape=(100,1)
+                        # F, rank = fast_non_dominated_sort(objs)  # 快速非支配排序 就是为了得到比较好的[return,risk]，将比较好的解进行排序  objs.shape=(100, 2)代表把种群里面的初始所有解都求一遍(return, risk)
+                        # index = array_merge(F)   # 数组融合，将F里层的[]去掉
+                        # index = index[:10]       # 取前面10个比较好的[return,risk],这个index就是对应的比较好的[return, risk]的索引
+                        # P_100 = data_format_transform(P, _)   # P_100.shape = (100, 31)   # _=31   就是简单进行了数据格式的转换，之前的P.shape=(100, 31, 1)
+                        label[index0, :] = 1   #  label.shape=(100,1)，把index中比较好的解的索引位置的label设置为1
+                        ref_dec = P_100[index0, :]    # 取出比较好的[return, risk]对应的 解,即种群中的个体 ,len(ref_dec)=10,  len(ref_dec[0])   ref_dec.shape=(10,31)
+                        pool = ref_dec / np.tile(upper, (10, 1))  # upper=(1, 31)   tile(upper, (10,1)).shape=(10, 31)   np.tile 函数用于创建一个重复指定数组内容的新数组。具体而言，np.tile(upper, (10, 1)) 将 upper 数组沿着第一个维度（行）重复10次，并沿着第二个维度（列）重复1次。
+                        # pop_dec = P_100    # pop_dec是格式转换后的种群解  pop_dec.shape=(100, 31)
+                        input_dec = (pop_dec - np.tile(lower, (np.shape(pop_dec)[0], 1))) / np.tile(upper - lower,(np.shape(pop_dec)[0], 1))
+                        if t % 100 == 0 or t == 0:   # input_dec.shape=(100, 31)  label=(100,1)  label里面的某些位置为1表示这个index对应的解比较好
+                            net.train(input_dec, label, pool)
+
+                        off = net.generate(ref_dec / np.tile(upper, (np.shape(ref_dec)[0], 1)), N) * np.tile(upper, (N, 1))   # (100, 31)
                 
                     off_100 = data_format_recover(off, _)
                     objs_100_y = objective(off_100, port, r, s, c)
@@ -186,17 +208,24 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
         entropy_list.append(entropy)
 
         t += 1
-
-        if t in [0, 1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 150, 200, 300] and discussion and instance == 5:
+        # num是第几次迭代，num一共有51次
+        if t in [0, 1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 150, 200, 300, 400, 500, 600, 700, 800] and discussion and instance == 1:
+            os.makedirs(f'pop/experiment_{num}', exist_ok=True)
             pd.DataFrame(objs, columns=["return", "risk"]).to_csv(
-                f'pop/{name}_pop_gen_{t}.csv', index=False)
+                f'pop/experiment_{num}/{name}_pop_gen_{t}.csv', index=False)
 
-            if name == 'de':
-                pd.DataFrame(objs, columns=["return", "risk"]).to_csv(
-                    f'pop/const_pop_gen_{t}.csv', index=False)
+
+
+        # if t in [0, 1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 150, 200, 300, 400, 500, 600, 700, 800] and discussion and instance == 5:
+        #     pd.DataFrame(objs, columns=["return", "risk"]).to_csv(
+        #         f'pop/{name}_pop_gen_{t}.csv', index=False)
+
+        #     if name == 'de':
+        #         pd.DataFrame(objs, columns=["return", "risk"]).to_csv(
+        #             f'pop/const_pop_gen_{t}.csv', index=False)
 
         indicator_value = igd(objs, mp, vp)  # compute IGD metric
-        print("{}\t{}".format(t, indicator_value))
+        print("{}\t{}".format(t, indicator_value))  # 知道了，这里的t不一定要到1500才结束，下面当IGD保持100代不变的时候就braek
 
         if np.abs(indicator_value - temp) >= 1e-05:
             temp = indicator_value

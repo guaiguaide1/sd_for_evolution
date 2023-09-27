@@ -25,7 +25,7 @@ for i in range(rep):
     np.random.seed(500+i)
     random.seed(500+i)
     print("Start {}-th experiment.".format(i+1))
-    res = optimize(instance, N, T, gen, adj_lvxm, 'APG-SMOEA', i, par, sigma, nr, True, 100)
+    res = optimize(instance, N, T, gen, adj_lvxm, 'APG-SMOEA', i, par, sigma, nr, True, 100, 1)  # lastPara=1 choose Diffusion
     res = pd.DataFrame(res, columns=["return", "risk"])
     res.to_csv(savedir + str(i+1) + ".csv", index=False)
 

@@ -87,7 +87,8 @@ class GAN(object):# d=31, batchsize=8, lr=0.001, epoches=200, n_noise=31
                 # given_x_ = torch.from_numpy(given_x).to(device).float()   # numpy->tensor   (8, 31)
                 # given_y = torch.from_numpy(given_y).to(device).float()    # （8，1）
                 # 注意上面的given_x_, given_y都是真实的数据
-                d_results_real = self.D(given_x_.detach())   # 这里应该是不需要detach操作，因为given_x_不是可学习的参数
+                # d_results_real = self.D(given_x_.detach())   # 这里应该是不需要detach操作，因为given_x_不是可学习的参数
+                d_results_real = self.D(given_x_)   # xwf   
 
                 # 这里的fake_x就是噪声，将fake_x经过G来生成假的数据, fake_y都是random出来的数据
                 fake_x = np.random.multivariate_normal(center, cov, batch_size)  # （8， 31）从噪声出发
@@ -99,8 +100,10 @@ class GAN(object):# d=31, batchsize=8, lr=0.001, epoches=200, n_noise=31
                 # fake_y = torch.zeros((batch_size, 1)).to(device)   # 因为是假的数据嘛，所以fake_y都是0
                 # fake_x_ = fake_x.to(device).float()
 
-                g_results = self.G(fake_x_.detach())  # g_results=(8,31)   这里写错了，感觉应该是g_results=self.G(fake_x_)    d_results_fake=self.D(g_results.detach)
-                d_results_fake = self.D(g_results)  # 因为这里通过g_results会涉及到G的更新，如果这里也设置g_results，则无法梯度回传去更新G
+                # g_results = self.G(fake_x_.detach())  # g_results=(8,31)   这里写错了，感觉应该是g_results=self.G(fake_x_)    d_results_fake=self.D(g_results.detach)
+                # d_results_fake = self.D(g_results)  # 因为这里通过g_results会涉及到G的更新，如果这里也设置g_results，则无法梯度回传去更新G
+                g_results = self.G(fake_x_)          # xwf
+                d_results_fake = self.D(g_results.detach())
 
                 d_train_loss = self.BCE_loss(d_results_real, given_y) + \
                                self.BCE_loss(d_results_fake, fake_y)  
@@ -126,6 +129,7 @@ class GAN(object):# d=31, batchsize=8, lr=0.001, epoches=200, n_noise=31
             
             random.shuffle(indices)
             pop_dec = pop_dec[indices, :]   # 感觉这里应该加上label = labels[indices, :]
+            label = labels[indices, :]   #  xwf
 
     def generate(self, sample_noises, population_size):  # sample_noises.shape=(10, 31)  population_size=100
 

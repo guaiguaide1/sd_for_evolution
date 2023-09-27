@@ -139,7 +139,7 @@ def delta(A, F, L):
     return D
 
 
-# 超体积
+# 超体积  HV
 def hypervolume(A, R):
     A = ndset(A)
     A = sorted(A, key=lambda x: x[1])
