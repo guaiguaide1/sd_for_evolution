@@ -100,7 +100,7 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
 
     F1, F2 = extreme_point(objs)   #求出初始所有解的(return, risk)包含负收益最小的(return, risk)=F1=[-0.00401471,  0.00114329]     包含risk最小的(return, risk) F2=[-0.0035831 ,  0.00099589]这个函数用于从一个多目标优化问题的解集中找到最小收益和最小风险所对应的解（极值点），以便在多目标优化中进行进一步的分析或决策。
     net = GAN(_, 8, 0.0001, 200, _)    # _=31
-    Diffnet = Diffusion(_, 0.0001, 400)  # dim, lr, epoch, batchsize.default=32
+    Diffnet = Diffusion(_, 0.0001, 50)  # dim, lr, epoch, batchsize.default=32
     indicator_value = igd(objs, mp, vp)   # obj=(100, 2)  mp=(2000, 1), vp=(2000,1)    igd: 指标值，是一个实数，越小越好，越小说明种群里的解得到的[return, risk]就越接近Pareto front解
     print("{}\t{}".format(t, indicator_value))
     
@@ -125,16 +125,16 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
                 y = operator(P, i, b, lb, ub, par)   #operator:  adj_lvxm  i:当前要变异的个体的索引。 y.shape=(31,1)变异后的个体
                 # b: 个体 i 的邻居索引，从邻居中双随机选择一个个体，用于和i一起来进行变异操作。
             else :
+                if Diff: # 1: Diff
+                    if k % 10 == 0 or k == 0:
 
-                if k % 20 == 0 or k == 0:
-                    F, rank = fast_non_dominated_sort(objs)
-                    index = array_merge(F)
-                    index0 = index[:10]   #   用于Gan和diffusion的榜样
-                    index1 = index[:30]   #   取前32个用于diffusion的训练
-                    P_100 = data_format_transform(P, _)
-                    pop_dec = P_100
+                        F, rank = fast_non_dominated_sort(objs)
+                        index = array_merge(F)
+                        index0 = index[:10]   #   用于Gan和diffusion的榜样
+                        index1 = index[:50]   #   取前32个用于diffusion的训练
+                        P_100 = data_format_transform(P, _)
+                        pop_dec = P_100
 
-                    if Diff: # 1: Diff
                         ref_dec = P_100[index0, :]
                         pool = ref_dec / np.tile(upper, (10, 1))
                         input_dec = P_100[index1, :]#   取前32个用于diffusion的训练
@@ -144,7 +144,24 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
                         
                         off = Diffnet.generate(ref_dec / np.tile(upper, (np.shape(ref_dec)[0], 1)), N) * np.tile(upper, (N, 1))
                     
-                    else: #0: Gan
+
+                        off_100 = data_format_recover(off, _)
+                        objs_100_y = objective(off_100, port, r, s, c)
+                        F_y, rank_y = fast_non_dominated_sort(objs_100_y)
+                        
+                        index_y = array_merge(F_y)
+                        k = 0
+                    
+                else: #0: Gan
+                    if k % 20 == 0 or k == 0:
+
+                        F, rank = fast_non_dominated_sort(objs)
+                        index = array_merge(F)
+                        index0 = index[:10]   #   用于Gan和diffusion的榜样
+                        # index1 = index[:50]   #   取前32个用于diffusion的训练
+                        P_100 = data_format_transform(P, _)
+                        pop_dec = P_100
+
                         label = np.zeros((N, 1))    # N=100 种群的大小  label.shape=(100,1)
                         # F, rank = fast_non_dominated_sort(objs)  # 快速非支配排序 就是为了得到比较好的[return,risk]，将比较好的解进行排序  objs.shape=(100, 2)代表把种群里面的初始所有解都求一遍(return, risk)
                         # index = array_merge(F)   # 数组融合，将F里层的[]去掉
@@ -160,19 +177,22 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
 
                         off = net.generate(ref_dec / np.tile(upper, (np.shape(ref_dec)[0], 1)), N) * np.tile(upper, (N, 1))   # (100, 31)
                 
-                    off_100 = data_format_recover(off, _)
-                    objs_100_y = objective(off_100, port, r, s, c)
-                    F_y, rank_y = fast_non_dominated_sort(objs_100_y)
-                    
-                    index_y = array_merge(F_y)
-                    k = 0
+                        off_100 = data_format_recover(off, _)
+                        objs_100_y = objective(off_100, port, r, s, c)
+                        F_y, rank_y = fast_non_dominated_sort(objs_100_y)
+                        
+                        index_y = array_merge(F_y)
+                        k = 0
+                
+
                 y = off[index_y[k]]
-
                 y = reshape_off(y, _)
-                #y = repair(y, lb, ub)
                 k = k+1
+                y = repair(y, lb, ub)
 
 
+
+            
 
             if discussion and instance == 5 and num == 1:  # discussion=T  instance=1   num:迭代的次数，即第几次迭代
                 len_trial = np.linalg.norm(y - P[i])
@@ -209,16 +229,17 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
 
         t += 1
         # num是第几次迭代，num一共有51次
-        if t in [0, 1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 150, 200, 300, 400, 500, 600, 700, 800] and discussion and instance == 1:
-            os.makedirs(f'pop/experiment_{num}', exist_ok=True)
-            pd.DataFrame(objs, columns=["return", "risk"]).to_csv(
-                f'pop/experiment_{num}/{name}_pop_gen_{t}.csv', index=False)
-
-
-
-        # if t in [0, 1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 150, 200, 300, 400, 500, 600, 700, 800] and discussion and instance == 5:
+        # if t in [0, 1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 150, 200, 300, 400, 500, 600, 700, 800] and discussion:
+        #     os.makedirs(f'pop/dataset_{instance}',exist_ok=True)
+        #     os.makedirs(f'pop/dataset_{instance}/experiment_{num}', exist_ok=True)
         #     pd.DataFrame(objs, columns=["return", "risk"]).to_csv(
-        #         f'pop/{name}_pop_gen_{t}.csv', index=False)
+        #         f'pop/dataset_{instance}/experiment_{num}/{name}_pop_gen_{t}.csv', index=False)
+
+
+
+        if t in [0, 1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 150, 200, 300, 400, 500, 600, 700, 800] and discussion and instance == 5:
+            pd.DataFrame(objs, columns=["return", "risk"]).to_csv(
+                f'pop/{name}_pop_gen_{t}.csv', index=False)
 
         #     if name == 'de':
         #         pd.DataFrame(objs, columns=["return", "risk"]).to_csv(

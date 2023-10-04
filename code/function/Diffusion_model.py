@@ -16,18 +16,41 @@ class MLPDiffusion(nn.Module):
 
         self.layer1 = nn.Linear(d, num_units)
         self.layer2 = nn.Linear(num_units, num_units)
-        self.layer3 = nn.Linear(num_units, num_units)
+        # self.layer3 = nn.Linear(num_units, num_units)
         self.layer4 = nn.Linear(num_units, d)
         self.sigmoid = nn.Sigmoid()
         self.relu = nn.ReLU()                 # self.tanh = nn.Tanh()  relu更容易收敛
-        self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(3)])
+        # self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(3)])
+        self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(2)])
 
-        self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(3)])
+        # self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(3)])
+        self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(2)])
+
+        # Initialize weights
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                if m == self.layer4:
+                    # Xavier initialization for the layer with sigmoid activation
+                    init.xavier_uniform_(m.weight)
+                    if m.bias is not None:
+                        init.constant_(m.bias, 0)
+                else:
+                    # He initialization for layers with ReLU activation
+                    init.kaiming_uniform_(m.weight, nonlinearity='relu')
+                    if m.bias is not None:
+                        init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm1d):
+                init.constant_(m.weight, 1)
+                init.constant_(m.bias, 0)
 
     def forward(self, x, t):
         for idx, (embedding_layer, bn_layer) in enumerate(zip(self.step_embeddings, self.bn_layers)):
             t_embedding = embedding_layer(t)
-            x = self.layer1(x) if idx == 0 else self.layer2(x) if idx == 1 else self.layer3(x)
+            # x = self.layer1(x) if idx == 0 else self.layer2(x) if idx == 1 else self.layer3(x)
+            x = self.layer1(x) if idx == 0 else self.layer2(x)
             x += t_embedding
             x = bn_layer(x)
             x = self.relu(x)
@@ -76,7 +99,8 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
 
         # 5.优化器
         # weight_decay=1e-5   添加L2正则化，权重衰减
-        self.optimizer = optim.Adam(self.Denoise.parameters(), lr=self.lr, weight_decay=1e-5)
+        # self.optimizer = optim.Adam(self.Denoise.parameters(), lr=self.lr, weight_decay=1e-5)
+        self.optimizer = optim.Adam(self.Denoise.parameters(), lr=self.lr)
     
 
     #前向加噪过程，计算任意时刻加噪后的xt，基于x_0和重参数化
@@ -84,8 +108,11 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
         """可以基于x[0]得到任意时刻t的x[t]"""
 
         noise = np.random.multivariate_normal(center, cov, x_0.shape[0])  
+        noise = torch.from_numpy(np.maximum(np.minimum(noise, np.ones(( x_0.shape[0], self.dim))),
+                                             np.zeros(( x_0.shape[0], self.dim)))).float()
+
         # RuntimeWarning: covariance is not symmetric positive-semidefinite.
-        noise = torch.from_numpy(noise).float()
+        # noise = torch.from_numpy(noise).float()
 
         # noise = torch.randn_like(x_0)   # noise是从某分布中生成的随机噪声
         alphas_t = self.alphas_bar_sqrt[t]
@@ -102,8 +129,9 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
 
         x_0 = torch.from_numpy(x_0).float()
 
-        t = torch.randint(0, n_steps, size=(batch_size // 2,))# 确保t也在同一个设备上
-        t = torch.cat([t, n_steps - 1 - t], dim=0)  # 确保合并后的t也在同一个设备上
+        # t = torch.randint(0, n_steps, size=(batch_size // 2,))# 确保t也在同一个设备上
+        # t = torch.cat([t, n_steps - 1 - t], dim=0)  # 确保合并后的t也在同一个设备上
+        t = torch.full((batch_size,), n_steps-1)
         t = t.unsqueeze(-1)
 
         xt = self.q_x(x_0, t, center, cov)
@@ -128,16 +156,16 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
         cov = np.cov(samples_pool[:10, :].reshape((d, samples_pool[:10, :].size // d)))#  (10, 31)->(31, 10)  conv=(31,31)  np.cov 函数用于计算协方差矩阵   samples_pool.shape=(10, 31),   
 
         # 特征值分解并修正: 如果矩阵不是正定的（即有负特征值）
-        eigenvalues, eigenvectors = np.linalg.eig(cov)
-        # 修正特征值：将负或接近零的特征值修正为一个小的正数。
-        corrected_eigenvalues = np.maximum(eigenvalues, 1e-6)  # 将负特征值或过小的正特征值修正为一个小的正数
-        # 使用实数特征值和特征向量重构协方差矩阵：
-        corrected_cov = eigenvectors.real @ np.diag(corrected_eigenvalues) @ eigenvectors.real.T
-        # corrected_cov = eigenvectors @ np.diag(corrected_eigenvalues) @ eigenvectors.T
-        corrected_cov = corrected_cov.real
-        # 确保重构的协方差矩阵是实数和对称的：
-        corrected_cov = (corrected_cov + corrected_cov.T) / 2
-        cov = corrected_cov
+        # eigenvalues, eigenvectors = np.linalg.eig(cov)
+        # # 修正特征值：将负或接近零的特征值修正为一个小的正数。
+        # corrected_eigenvalues = np.maximum(eigenvalues, 1e-6)  # 将负特征值或过小的正特征值修正为一个小的正数
+        # # 使用实数特征值和特征向量重构协方差矩阵：
+        # corrected_cov = eigenvectors.real @ np.diag(corrected_eigenvalues) @ eigenvectors.real.T
+        # # corrected_cov = eigenvectors @ np.diag(corrected_eigenvalues) @ eigenvectors.T
+        # corrected_cov = corrected_cov.real
+        # # 确保重构的协方差矩阵是实数和对称的：
+        # corrected_cov = (corrected_cov + corrected_cov.T) / 2
+        # cov = corrected_cov
 
         for epoch in range(self.epoches):
             loss = 0
@@ -201,16 +229,16 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
 
 
         # 特征值分解并修正: 如果矩阵不是正定的（即有负特征值）
-        eigenvalues, eigenvectors = np.linalg.eig(cov)
-        # 修正特征值：将负或接近零的特征值修正为一个小的正数。
-        corrected_eigenvalues = np.maximum(eigenvalues, 1e-6)  # 将负特征值或过小的正特征值修正为一个小的正数
-        # 使用实数特征值和特征向量重构协方差矩阵：
-        corrected_cov = eigenvectors.real @ np.diag(corrected_eigenvalues) @ eigenvectors.real.T
-        # corrected_cov = eigenvectors @ np.diag(corrected_eigenvalues) @ eigenvectors.T
-        corrected_cov = corrected_cov.real
-        # 确保重构的协方差矩阵是实数和对称的：
-        corrected_cov = (corrected_cov + corrected_cov.T) / 2
-        cov = corrected_cov
+        # eigenvalues, eigenvectors = np.linalg.eig(cov)
+        # # 修正特征值：将负或接近零的特征值修正为一个小的正数。
+        # corrected_eigenvalues = np.maximum(eigenvalues, 1e-6)  # 将负特征值或过小的正特征值修正为一个小的正数
+        # # 使用实数特征值和特征向量重构协方差矩阵：
+        # corrected_cov = eigenvectors.real @ np.diag(corrected_eigenvalues) @ eigenvectors.real.T
+        # # corrected_cov = eigenvectors @ np.diag(corrected_eigenvalues) @ eigenvectors.T
+        # corrected_cov = corrected_cov.real
+        # # 确保重构的协方差矩阵是实数和对称的：
+        # corrected_cov = (corrected_cov + corrected_cov.T) / 2
+        # cov = corrected_cov
 
 
         noises = np.random.multivariate_normal(center, cov, population_size)

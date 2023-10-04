@@ -11,7 +11,8 @@ instance = int(sys.argv[1])    # 在这里接受了参数，在数据集instance
 rep = 51   # 迭代的次数
 benchmarks = ["hangseng", "dax", "ftse", "sp", "nikkei"]   # 包含多个股市的名称
 size = [31, 85, 89, 98, 225]    # 数据集大小
-savedir = "result/{}/GAN-adjlvxm/".format(benchmarks[instance-1])   # 'result/hangseng/GAN-adjlvxm/'
+# savedir = "result/{}/GAN-adjlvxm/".format(benchmarks[instance-1])   # 'result/hangseng/GAN-adjlvxm/'
+savedir = "result/{}/DIFF-adjlvxm/".format(benchmarks[instance-1])
 
 N, T, gen = 100, 20, 1500 # N:数据集大小   # T:邻居大小   # gen:与迭代次数不同，这里只生成子代的代数
 sigma, nr = 0.9, 2     # sigma:用于判断父母的选择，从邻居中还是从整个种群中    # 
@@ -25,7 +26,8 @@ for i in range(rep):
     np.random.seed(500+i)
     random.seed(500+i)
     print("Start {}-th experiment.".format(i+1))
-    res = optimize(instance, N, T, gen, adj_lvxm, 'APG-SMOEA', i, par, sigma, nr, True, 100, 1)  # lastPara=1 choose Diffusion
+    # res = optimize(instance, N, T, gen, adj_lvxm, 'APG-SMOEA', i, par, sigma, nr, True, 100, 0)
+    res = optimize(instance, N, T, gen, adj_lvxm, 'DIFF-SMOEA', i, par, sigma, nr, True, 100, 1)  # lastPara=1 choose Diffusion
     res = pd.DataFrame(res, columns=["return", "risk"])
     res.to_csv(savedir + str(i+1) + ".csv", index=False)
 

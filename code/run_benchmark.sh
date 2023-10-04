@@ -3,7 +3,9 @@
 benchmarks=("hangseng" "dax" "ftse" "sp" "nikkei")
 # 分别做五个测试集上的两个实验对比测试
 mkdir -p ./result/${benchmarks[$1-1]}
-mkdir -p ./result/${benchmarks[$1-1]}/GAN-adjlvxm
+# mkdir -p ./result/${benchmarks[$1-1]}/GAN-adjlvxm
+mkdir -p ./result/${benchmarks[$1-1]}/DIFF-adjlvxm
+
 mkdir -p ./result/${benchmarks[$1-1]}/lvxm
 mkdir -p ./result/${benchmarks[$1-1]}/adjlvxm
 mkdir -p ./result/${benchmarks[$1-1]}/dem
@@ -20,8 +22,8 @@ mkdir -p ./result/${benchmarks[$1-1]}/norm
 #echo Finish GAN-adjlvxm on $1
 
 # python run_GAN-adjlvxm.py $1 >> ./result/${benchmarks[$1-1]}/GAN-adjlvxm/igd.txt    # 之前这一行xwf
-python run_APG-SMOEA.py $1 >> ./result/${benchmarks[$1-1]}/GAN-adjlvxm/igd.txt
-# python run_APG-SMOEA.py 1 >> ./result/hangseng/GAN-adjlvxm/igd.txt
+# python run_APG-SMOEA.py $1 >> ./result/${benchmarks[$1-1]}/GAN-adjlvxm/igd.txt
+python run_APG-SMOEA.py $1 >> ./result/${benchmarks[$1-1]}/DIFF-adjlvxm/igd.txt
 
 echo Finish GAN-adjlvxm on $1
 

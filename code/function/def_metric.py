@@ -99,7 +99,7 @@ def spacing(A):
     return SP
 
 
-# 伸展度
+# 伸展度 MaxSpread
 def spread(A):
     # NOTICE: this is for Maximum Spread metric in the paper
     A = ndset(A)
@@ -138,7 +138,7 @@ def delta(A, F, L):
     return D
 
 
-# 超体积
+# 超体积HV
 def hypervolume(A, R):
     A = ndset(A)
     A = sorted(A, key=lambda x: x[1])
