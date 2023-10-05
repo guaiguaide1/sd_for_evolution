@@ -1,3 +1,8 @@
+#######################################################
+# 2023/10/4    11:00 
+
+#######################################################
+
 import torch 
 import torch.nn as nn 
 import torch.optim as optim 
@@ -14,10 +19,10 @@ class MLPDiffusion(nn.Module):
         super(MLPDiffusion,self).__init__()
         num_units = d
 
-        self.layer1 = nn.Linear(d, num_units)
-        self.layer2 = nn.Linear(num_units, num_units)
+        self.layer1 = nn.Linear(d, num_units, bias=True)
+        self.layer2 = nn.Linear(num_units, num_units, bias=True)
         # self.layer3 = nn.Linear(num_units, num_units)
-        self.layer4 = nn.Linear(num_units, d)
+        self.layer4 = nn.Linear(num_units, d, bias=True)
         self.sigmoid = nn.Sigmoid()
         self.relu = nn.ReLU()                 # self.tanh = nn.Tanh()  relu更容易收敛
         # self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(3)])
@@ -26,7 +31,6 @@ class MLPDiffusion(nn.Module):
         # self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(3)])
         self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(2)])
 
-        # Initialize weights
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -59,7 +63,17 @@ class MLPDiffusion(nn.Module):
         x = self.sigmoid(x)
         return x
 
+
+class MLPDiffusionWithLambda(nn.Module):
+    def __init__(self, d, n_steps):
+        super(MLPDiffusionWithLambda, self).__init__()
+        self.diffNet = MLPDiffusion(d, n_steps)
+        # 初始化lambda_weight 为一个较小的正值，例如0.5, 并使其为可学习的参数
+        self.lambda_weight = nn.Parameter(torch.tensor(6.)) 
     
+    def forward(self, x, t):
+        return self.diffNet(x, t)
+
 
 class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不一样
     def __init__(self, dim, lr, epoches, batchsize=32):
@@ -92,27 +106,24 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
 
 
         # 3.初始化去噪模型
-        self.Denoise = MLPDiffusion(self.dim, self.num_steps)
+        self.Denoise = MLPDiffusionWithLambda(self.dim, self.num_steps)
 
         # 4.损失函数
         self.loss = nn.MSELoss()
 
         # 5.优化器
         # weight_decay=1e-5   添加L2正则化，权重衰减
-        # self.optimizer = optim.Adam(self.Denoise.parameters(), lr=self.lr, weight_decay=1e-5)
-        self.optimizer = optim.Adam(self.Denoise.parameters(), lr=self.lr)
+        self.optimizer = optim.Adam(self.Denoise.parameters(), lr=self.lr, weight_decay=1e-5)
     
 
     #前向加噪过程，计算任意时刻加噪后的xt，基于x_0和重参数化
     def q_x(self, x_0, t, center, cov):
         """可以基于x[0]得到任意时刻t的x[t]"""
-
+        
         noise = np.random.multivariate_normal(center, cov, x_0.shape[0])  
         noise = torch.from_numpy(np.maximum(np.minimum(noise, np.ones(( x_0.shape[0], self.dim))),
                                              np.zeros(( x_0.shape[0], self.dim)))).float()
 
-        # RuntimeWarning: covariance is not symmetric positive-semidefinite.
-        # noise = torch.from_numpy(noise).float()
 
         # noise = torch.randn_like(x_0)   # noise是从某分布中生成的随机噪声
         alphas_t = self.alphas_bar_sqrt[t]
@@ -122,55 +133,66 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
         return xt #在x[0]的基础上添加噪声
         # 上面就可以通过x0和t来采样出xt的值
 
-    def diffusion_loss_fn(self, x_0, center, cov):
+    def diffusion_loss_fn(self, x_0, negative_samples, center, cov):
+        ''' 
+        x_0: positive_samples
+        '''
+        # 使用ReLU确保lambda_weight始终为正
+        lambda_value = torch.relu(self.Denoise.lambda_weight)
+        # 使用clamp确保lambda_weight在[a, b]范围内
+        lambda_weight = torch.clamp(lambda_value, min=0.1, max=12)
+
         # n_steps为中的时间步数，这里是500步
         batch_size = x_0.shape[0]
         n_steps = self.num_steps
 
         x_0 = torch.from_numpy(x_0).float()
+        negative_samples = torch.from_numpy(negative_samples).float()
 
-        # t = torch.randint(0, n_steps, size=(batch_size // 2,))# 确保t也在同一个设备上
-        # t = torch.cat([t, n_steps - 1 - t], dim=0)  # 确保合并后的t也在同一个设备上
         t = torch.full((batch_size,), n_steps-1)
         t = t.unsqueeze(-1)
 
         xt = self.q_x(x_0, t, center, cov)
 
-        output = self.Denoise(xt, t.squeeze(-1))  # 这里让模型直接预测x_0而不是噪声
+        output = self.Denoise(xt, t.squeeze(-1))
         # epsilon = (xt - x_0 * self.alphas_bar_sqrt[t]) / self.one_minus_alphas_bar_sqrt[t]  
         # 根据公式反推epsilon, 以便进行损失计算
-        
         # return (epsilon - output).square().mean()
-        return (x_0 - output).square().mean()
-    
-    def train(self, pop_dec, samples_pool):
+
+        # 正样本的重建误差
+        loss_positive = (x_0 - output).square().mean()
+
+        # 负样本的距离
+        loss_negative = -torch.mean(torch.norm(output.unsqueeze(1) - negative_samples, dim=2)**2)
+
+        # 整合损失
+        total_loss = loss_positive + lambda_weight * loss_negative
+
+        # return (x_0 - output).square().mean()
+        return total_loss
+
+    def train(self, positive_samples, negative_samples):
+        # def train(self, pop_dec, samples_pool):
         ''' 
-        pop_dec: shape(32, 31)    用于训练的数据，这里只选前32个样本用于训练
+        pop_dec: shape(32, 31)   
         samples_pool.shape=(10, 31)是当前种群中表现最好的10个解，计算他们的均值和方差，用以生成随机噪声，即作为随机噪声的均值和方差
+        
+        positive_sample 用于训练正样本，并且作为center, cov的标尺, 这里只选前10个样本用于训练
+
+        negative_sample 用于训练的负样本，余下的90个样本
         '''
         self.Denoise.train()
-        n, d = np.shape(pop_dec)
+        n, d = np.shape(positive_samples)
         indices = np.arange(n)  # indices=array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,..., 30, 31])
         
-        center = np.mean(samples_pool, axis=0)  # (31,1)  axis=0，对第一个维度求均值    下面的 cov 矩阵提供了一个关于这10个样本在31个特征上相互关系的全面视图。
-        cov = np.cov(samples_pool[:10, :].reshape((d, samples_pool[:10, :].size // d)))#  (10, 31)->(31, 10)  conv=(31,31)  np.cov 函数用于计算协方差矩阵   samples_pool.shape=(10, 31),   
-
-        # 特征值分解并修正: 如果矩阵不是正定的（即有负特征值）
-        # eigenvalues, eigenvectors = np.linalg.eig(cov)
-        # # 修正特征值：将负或接近零的特征值修正为一个小的正数。
-        # corrected_eigenvalues = np.maximum(eigenvalues, 1e-6)  # 将负特征值或过小的正特征值修正为一个小的正数
-        # # 使用实数特征值和特征向量重构协方差矩阵：
-        # corrected_cov = eigenvectors.real @ np.diag(corrected_eigenvalues) @ eigenvectors.real.T
-        # # corrected_cov = eigenvectors @ np.diag(corrected_eigenvalues) @ eigenvectors.T
-        # corrected_cov = corrected_cov.real
-        # # 确保重构的协方差矩阵是实数和对称的：
-        # corrected_cov = (corrected_cov + corrected_cov.T) / 2
-        # cov = corrected_cov
+        center = np.mean(positive_samples, axis=0)  # (31,1)  axis=0，对第一个维度求均值    下面的 cov 矩阵提供了一个关于这10个样本在31个特征上相互关系的全面视图。
+        cov = np.cov(positive_samples[:10, :].reshape((d, positive_samples[:10, :].size // d)))#  (10, 31)->(31, 10)  conv=(31,31)  np.cov 函数用于计算协方差矩阵   samples_pool.shape=(10, 31),   
+        
 
         for epoch in range(self.epoches):
             loss = 0
             self.optimizer.zero_grad()
-            loss = self.diffusion_loss_fn(pop_dec, center, cov)
+            loss = self.diffusion_loss_fn(positive_samples, negative_samples, center, cov)
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.Denoise.parameters(), 1.)
@@ -178,22 +200,13 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
             # print("Epoch[{}], loss: {:.5f}".format(epoch, loss))
 
         random.shuffle(indices)
-        pop_dec = pop_dec[indices, :]   # 感觉这里应该加上label = labels[indices, :]
+        positive_samples = positive_samples[indices, :]   # 感觉这里应该加上label = labels[indices, :]
 
 
     def p_sample_loop(self, x_T, center, cov):
         """从x[T]恢复x[T-1]、x[T-2]|...x[0]"""
         cur_x = x_T
 
-        # x_seq = [x_T]
-        # for i in reversed(range(self.num_steps)):
-            # 逆扩散过程是自回归的，即必须按顺序依次推出x[t],x[t-1],x[t-2]...
-            # 不能并行inference
-            # cur_x = self.p_sample(cur_x, i, center, cov)
-            # x_seq.append(cur_x)
-            # 把很多步采样拼起来
-        # return x_seq
-        # x_0 = cur_x
         x_0 = self.p_sample(cur_x, self.num_steps - 1, center, cov)
         return x_0
 
@@ -202,44 +215,13 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
         t = torch.tensor([t])
         x_0 = self.Denoise(x,t)
 
-        # coeff = self.betas[t.item()] / self.one_minus_alphas_bar_sqrt[t]
-
-        # eps_theta = self.Denoise(x,t)
-
-        # mean = (1 / (1 - self.betas[t]).sqrt()) * (x - (coeff * eps_theta))
-        
-        # if t == 1:
-        #     sample = mean
-        # else:
-        #     # 得到mean后，再生成一个随机量z
-        #     z = np.random.multivariate_normal(center, cov, x.shape[0])  
-        #     z = torch.from_numpy(z).float()
-        #     sigma_t = self.betas[t].sqrt()
-            
-        #     sample = mean + sigma_t * z
-
-        # # 上面就单步采样
-        return x_0
+        return x_0 
     
 
     def generate(self, sample_noises, population_size):# population_size=100
         self.Denoise.eval()
         center = np.mean(sample_noises, axis=0).T
         cov = np.cov(sample_noises.T)
-
-
-        # 特征值分解并修正: 如果矩阵不是正定的（即有负特征值）
-        # eigenvalues, eigenvectors = np.linalg.eig(cov)
-        # # 修正特征值：将负或接近零的特征值修正为一个小的正数。
-        # corrected_eigenvalues = np.maximum(eigenvalues, 1e-6)  # 将负特征值或过小的正特征值修正为一个小的正数
-        # # 使用实数特征值和特征向量重构协方差矩阵：
-        # corrected_cov = eigenvectors.real @ np.diag(corrected_eigenvalues) @ eigenvectors.real.T
-        # # corrected_cov = eigenvectors @ np.diag(corrected_eigenvalues) @ eigenvectors.T
-        # corrected_cov = corrected_cov.real
-        # # 确保重构的协方差矩阵是实数和对称的：
-        # corrected_cov = (corrected_cov + corrected_cov.T) / 2
-        # cov = corrected_cov
-
 
         noises = np.random.multivariate_normal(center, cov, population_size)
         noises = torch.from_numpy(np.maximum(np.minimum(noises, np.ones((population_size, self.dim))),
@@ -249,4 +231,3 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
             decs= self.p_sample_loop(Variable(noises.cpu()).float(), center, cov).cpu().data.numpy()
     
         return decs 
-    
