@@ -100,7 +100,7 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
 
     F1, F2 = extreme_point(objs)   #求出初始所有解的(return, risk)包含负收益最小的(return, risk)=F1=[-0.00401471,  0.00114329]     包含risk最小的(return, risk) F2=[-0.0035831 ,  0.00099589]这个函数用于从一个多目标优化问题的解集中找到最小收益和最小风险所对应的解（极值点），以便在多目标优化中进行进一步的分析或决策。
     net = GAN(_, 8, 0.0001, 200, _)    # _=31
-    Diffnet = Diffusion(_, 0.0001, 200)  # dim, lr, epoch, batchsize.default=32
+    Diffnet = Diffusion(_, 0.005, 50)  # dim, lr, epoch,   按理说epoch应该设置为1500时，loss才收敛
     indicator_value = igd(objs, mp, vp)   # obj=(100, 2)  mp=(2000, 1), vp=(2000,1)    igd: 指标值，是一个实数，越小越好，越小说明种群里的解得到的[return, risk]就越接近Pareto front解
     print("{}\t{}".format(t, indicator_value))
     
@@ -126,11 +126,16 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
                 # b: 个体 i 的邻居索引，从邻居中双随机选择一个个体，用于和i一起来进行变异操作。
             else :
                 if Diff: # 1: Diff
-                    if k % 10 == 0 or k == 0:
+                    if k % 20 == 0 or k == 0:
+                        # 想自己生成500个样本，从中挑前50个好的
+                        # P1 = population(lb, ub, 5*N)   # 自己生成的500个初始样本
+                        # objs1 = objective(P1, port, r, s, c)
+                        # F1, rank1 = fast_non_dominated_sort(objs1)
+                        # index1 = array_merge(F1)
+                        # positive_indices = index1[:50]
 
                         F, rank = fast_non_dominated_sort(objs)
                         index = array_merge(F)
-                        # index0 = index[:10]   #   用于Gan和diffusion的榜样
                         positive_indices = index[:10]
                         # 创建包含所有索引的列表
                         all_indices = list(range(N))
@@ -146,7 +151,7 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
                         positive_samples = P_100[positive_indices, :]
                         negative_samples = P_100[negative_indices, :]
 
-                        positive_samples = positive_samples / np.tile(upper, (10, 1))
+                        positive_samples = positive_samples / np.tile(upper, (np.shape(positive_samples)[0], 1))
                         # input_dec = P_100[index1, :]#   取前32个用于diffusion的训练
                         # input_dec = (input_dec - np.tile(lower, (np.shape(input_dec)[0], 1))) / np.tile(upper - lower,(np.shape(input_dec)[0], 1))
                         negative_samples = (negative_samples - np.tile(lower, (np.shape(negative_samples)[0], 1))) / np.tile(upper - lower,(np.shape(negative_samples)[0], 1))
@@ -155,6 +160,7 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
                             Diffnet.train(positive_samples, negative_samples)
                         
                         # off = Diffnet.generate(ref_dec / np.tile(upper, (np.shape(ref_dec)[0], 1)), N) * np.tile(upper, (N, 1))
+                        # off = Diffnet.generate(positive_samples[:10, :] / np.tile(upper, (np.shape(positive_samples[:10, :])[0], 1)), N) * np.tile(upper, (N, 1))
                         off = Diffnet.generate(positive_samples / np.tile(upper, (np.shape(positive_samples)[0], 1)), N) * np.tile(upper, (N, 1))
                     
 
@@ -263,6 +269,6 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
             count = 0
         else:
             count += 1
-        if count >= cgen and cflag is True:
+        if count >= cgen and cflag and indicator_value < 3e-05:
             break
     return objs

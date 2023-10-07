@@ -10,6 +10,9 @@ import torch.nn.init as init
 from torch.autograd import Variable
 import random 
 import numpy as np 
+import torch.nn.functional as F
+from sklearn.utils import resample
+from imblearn.over_sampling import SMOTE
 
 # device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
@@ -23,8 +26,10 @@ class MLPDiffusion(nn.Module):
         self.layer2 = nn.Linear(num_units, num_units, bias=True)
         # self.layer3 = nn.Linear(num_units, num_units)
         self.layer4 = nn.Linear(num_units, d, bias=True)
+
         self.sigmoid = nn.Sigmoid()
         self.relu = nn.ReLU()                 # self.tanh = nn.Tanh()  relu更容易收敛
+        self.dropout = nn.Dropout(0.5)
         # self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(3)])
         self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(2)])
 
@@ -58,6 +63,7 @@ class MLPDiffusion(nn.Module):
             x += t_embedding
             x = bn_layer(x)
             x = self.relu(x)
+            x = self.dropout(x)  # Apply dropout after ReLU activation
         
         x = self.layer4(x)
         x = self.sigmoid(x)
@@ -69,8 +75,8 @@ class MLPDiffusionWithLambda(nn.Module):
         super(MLPDiffusionWithLambda, self).__init__()
         self.diffNet = MLPDiffusion(d, n_steps)
         # 初始化lambda_weight 为一个较小的正值，例如0.5, 并使其为可学习的参数
-        self.lambda_weight = nn.Parameter(torch.tensor(6.)) 
-    
+        self.lambda_weight = nn.Parameter(torch.tensor(0.5))  # 如果是6的话得写成小数形式：6.  
+        # self.alpha = nn.Parameter(torch.tensor(5.))
     def forward(self, x, t):
         return self.diffNet(x, t)
 
@@ -112,9 +118,8 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
         self.loss = nn.MSELoss()
 
         # 5.优化器
-        # weight_decay=1e-5   添加L2正则化，权重衰减
+        # weight_decay=1e-5   添加L2正则化，权重衰减     self.lr = 0.005
         self.optimizer = optim.Adam(self.Denoise.parameters(), lr=self.lr, weight_decay=1e-5)
-    
 
     #前向加噪过程，计算任意时刻加噪后的xt，基于x_0和重参数化
     def q_x(self, x_0, t, center, cov):
@@ -139,9 +144,12 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
         '''
         # 使用ReLU确保lambda_weight始终为正
         lambda_value = torch.relu(self.Denoise.lambda_weight)
-        # 使用clamp确保lambda_weight在[a, b]范围内
-        lambda_weight = torch.clamp(lambda_value, min=0.1, max=12)
-
+        
+        # 为了确保正样本的损失（loss_positive）在整体损失中占有更大的权重
+        # 模型的目标是更加关注正样本，并尽可能让生成的样本远离负样本
+        # 使用clamp确保lambda_weight在[a, b]范围内  
+        lambda_weight = torch.clamp(lambda_value, min=0.001, max=10)
+        # alpha = torch.clamp(torch.relu(self.Denoise.alpha), min=1, max=20)
         # n_steps为中的时间步数，这里是500步
         batch_size = x_0.shape[0]
         n_steps = self.num_steps
@@ -162,11 +170,36 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
         # 正样本的重建误差
         loss_positive = (x_0 - output).square().mean()
 
-        # 负样本的距离
-        loss_negative = -torch.mean(torch.norm(output.unsqueeze(1) - negative_samples, dim=2)**2)
+        # 负样本的L2距离
+        differences = output.unsqueeze(1) - negative_samples
+        loss_negative = -torch.mean((differences ** 2).sum(dim=2))
+
+        # 负样本的余弦距离
+        # cosine_dists = 1.0 - F.cosine_similarity(output.unsqueeze(1), negative_samples, dim=2)
+        # loss_negative = torch.mean(cosine_dists)
+
+        # loss_negative = -torch.mean(torch.norm(output.unsqueeze(1) - negative_samples, dim=2)**2)
+
+        # loss3: 计算两两之间的距离
+        distances = torch.cdist(output, output)
+        # 将对角线上的值(每个解与自身的距离)设置为0
+        mask = torch.eye(len(output)) == 1
+        distances.masked_fill(mask, 0)
+        #计算每个解的多样性度量，即与其他解的平均距离
+        diversity_measures = distances.sum(1) / (len(output) - 1)
+        # 计算整体的多样性度量
+        overall_diversity = diversity_measures.mean()
+        # alpha是一个超参数，表示多样性正则化的权重
+        alpha = -5  # 注意这里的 alpha为负，是为了在total_loss减去多样性度量，因为我们希望鼓励更大的多样性
+        # alpha为自动学习的参数时，要将total_loss里面的alpha项改为负号
+
+        # 整合损失 = positive + negative  + diversity    
+        total_loss = loss_positive + lambda_weight * loss_negative + alpha * overall_diversity
+        # beta = 0.5
+        # total_loss = loss_positive + beta*loss_negative + alpha * overall_diversity
 
         # 整合损失
-        total_loss = loss_positive + lambda_weight * loss_negative
+        # total_loss = loss_positive + lambda_weight * loss_negative
 
         # return (x_0 - output).square().mean()
         return total_loss
@@ -185,14 +218,42 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
         n, d = np.shape(positive_samples)
         indices = np.arange(n)  # indices=array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,..., 30, 31])
         
-        center = np.mean(positive_samples, axis=0)  # (31,1)  axis=0，对第一个维度求均值    下面的 cov 矩阵提供了一个关于这10个样本在31个特征上相互关系的全面视图。
+        center = np.mean(positive_samples[:10, :], axis=0)  # (31,1)  axis=0，对第一个维度求均值    下面的 cov 矩阵提供了一个关于这10个样本在31个特征上相互关系的全面视图。
         cov = np.cov(positive_samples[:10, :].reshape((d, positive_samples[:10, :].size // d)))#  (10, 31)->(31, 10)  conv=(31,31)  np.cov 函数用于计算协方差矩阵   samples_pool.shape=(10, 31),   
         
+        # 定义目标样本数量
+        target_samples = 50
+
+        # # 过采样正样本至50个
+        # upsampled_positive_samples = resample(positive_samples, 
+        #                                     replace=True, 
+        #                                     n_samples=target_samples,
+        #                                     random_state=123)
+
+        # 欠采样负样本至50个
+        downsampled_negative_samples = resample(negative_samples, 
+                                        replace=False, 
+                                        n_samples=target_samples,
+                                        random_state=123)
+        
+        y_positive = [1] * len(positive_samples)
+        y_negative = [0] * len(downsampled_negative_samples)
+        # 拼接数据
+        X = np.vstack((positive_samples, downsampled_negative_samples))
+        y = np.array(y_positive + y_negative)
+        # 使用SMOTE
+        smote = SMOTE(sampling_strategy='auto', random_state=42, k_neighbors=5)  # 设置k_neighbors为一个合适的值
+        X_resampled, y_resampled = smote.fit_resample(X, y)
+        # 现在，删除临时的负样本并只选择正样本
+        X_resampled = X_resampled[y_resampled == 1]
+        y_resampled = y_resampled[y_resampled == 1]
+
 
         for epoch in range(self.epoches):
             loss = 0
             self.optimizer.zero_grad()
-            loss = self.diffusion_loss_fn(positive_samples, negative_samples, center, cov)
+            # loss = self.diffusion_loss_fn(positive_samples, negative_samples, center, cov)
+            loss = self.diffusion_loss_fn(X_resampled, downsampled_negative_samples, center, cov)
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.Denoise.parameters(), 1.)
@@ -203,14 +264,14 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
         positive_samples = positive_samples[indices, :]   # 感觉这里应该加上label = labels[indices, :]
 
 
-    def p_sample_loop(self, x_T, center, cov):
-        """从x[T]恢复x[T-1]、x[T-2]|...x[0]"""
+    def p_sample_loop(self, x_T):
+        # """从x[T]恢复x[T-1]、x[T-2]|...x[0]"""
         cur_x = x_T
 
-        x_0 = self.p_sample(cur_x, self.num_steps - 1, center, cov)
+        x_0 = self.p_sample(cur_x, self.num_steps - 1)
         return x_0
 
-    def p_sample(self, x, t, center, cov): # 参数重整化的过程
+    def p_sample(self, x, t): # 参数重整化的过程
         """从x[t]采样t-1时刻的重构值，即从x[t]采样出x[t-1]"""
         t = torch.tensor([t])
         x_0 = self.Denoise(x,t)
@@ -228,6 +289,7 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
                                              np.zeros((population_size, self.dim)))).float()
 
         with torch.no_grad():
-            decs= self.p_sample_loop(Variable(noises.cpu()).float(), center, cov).cpu().data.numpy()
+            # decs= self.p_sample_loop(Variable(noises.cpu()).float(), center, cov).cpu().data.numpy()
+            decs= self.p_sample_loop(Variable(noises.cpu()).float()).cpu().data.numpy()
     
         return decs 

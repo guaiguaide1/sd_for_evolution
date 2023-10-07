@@ -21,7 +21,7 @@ def get_best(market, alg):
 
 
 # markets = ["hangseng", "dax", "ftse", "sp", "nikkei"]
-markets = ["sp"]
+markets = ["hangseng"]
 
 # algs = ["de", "dem", "ga", "lvx", "adjlvx", "lvxm", "adjlvxm", "nsga2", "norm", "unif"]  # 改为10个算子
 algs = ["adjlvxm", "dem", "de", "ga", "nsga2", "apg", "diff"]

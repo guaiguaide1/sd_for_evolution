@@ -11,7 +11,7 @@ from def_metric import delta as delta
 
 
 # markets = ["hangseng", "dax", "ftse", "sp", "nikkei"]
-markets = ["sp"]
+markets = ["hangseng"]
 
 # algs = ["lvxm", "adjlvxm", "dem", "de", "ga", "nsga2", "lvx", "adjlvx", "unif", "norm", "de"]   #  为什么这里面有俩de
 # alg_names = ["MOEA/D-Levy", "MOEA/D-AEE", "MOEA/D-DEM", "MOEA/D-DE", "MOEA/D-GA",

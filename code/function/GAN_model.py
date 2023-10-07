@@ -42,7 +42,7 @@ class Discriminator(nn.Module):
         return x
 
 
-class GAN(object):# d=31, batchsize=8, lr=0.001, epoches=200, n_noise=31
+class GAN(object):# d=31, batchsize=8, lr=0.0001, epoches=200, n_noise=31
     def __init__(self, d, batchsize, lr, epoches, n_noise):   
         self.d = d
         self.n_noise = n_noise
@@ -126,7 +126,9 @@ class GAN(object):# d=31, batchsize=8, lr=0.001, epoches=200, n_noise=31
                 self.G_optimizer.step()
                 g_train_losses += g_train_loss.cpu()
                 # g_train_losses += g_train_loss.item()
-            
+
+            # print("Epoch[{}], loss: {:.5f}".format(epoch, g_train_losses))
+
             random.shuffle(indices)
             pop_dec = pop_dec[indices, :]   # 感觉这里应该加上label = labels[indices, :]
             label = labels[indices, :]   #  xwf
