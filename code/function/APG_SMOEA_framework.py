@@ -207,7 +207,7 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
                 y = off[index_y[k]]
                 y = reshape_off(y, _)
                 k = k+1
-                y = repair(y, lb, ub)
+                # y = repair(y, lb, ub)
 
 
             if discussion and instance == 5 and num == 1:  # discussion=T  instance=1   num:迭代的次数，即第几次迭代
@@ -269,6 +269,7 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
             count = 0
         else:
             count += 1
+        # if count >= cgen and cflag is True:
         if count >= cgen and cflag and indicator_value < 3e-05:
             break
     return objs

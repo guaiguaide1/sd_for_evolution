@@ -17,25 +17,73 @@ from imblearn.over_sampling import SMOTE
 # device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 
+# class MLPDiffusion(nn.Module):    
+#     def __init__(self, d, n_steps):
+#         super(MLPDiffusion,self).__init__()
+#         num_units = d
+
+#         self.layer1 = nn.Linear(d, num_units, bias=True)
+#         self.layer2 = nn.Linear(num_units, num_units, bias=True)
+#         # self.layer3 = nn.Linear(num_units, num_units)
+#         self.layer4 = nn.Linear(num_units, d, bias=True)
+
+#         self.sigmoid = nn.Sigmoid()
+#         self.relu = nn.ReLU()                 # self.tanh = nn.Tanh()  relu更容易收敛
+#         self.dropout = nn.Dropout(0.5)
+#         # self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(3)])
+#         self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(2)])
+
+#         # self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(3)])
+#         self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(2)])
+
+#         self._initialize_weights()
+
+#     def _initialize_weights(self):
+#         for m in self.modules():
+#             if isinstance(m, nn.Linear):
+#                 if m == self.layer4:
+#                     # Xavier initialization for the layer with sigmoid activation
+#                     init.xavier_uniform_(m.weight)
+#                     if m.bias is not None:
+#                         init.constant_(m.bias, 0)
+#                 else:
+#                     # He initialization for layers with ReLU activation
+#                     init.kaiming_uniform_(m.weight, nonlinearity='relu')
+#                     if m.bias is not None:
+#                         init.constant_(m.bias, 0)
+#             elif isinstance(m, nn.BatchNorm1d):
+#                 init.constant_(m.weight, 1)
+#                 init.constant_(m.bias, 0)
+
+#     def forward(self, x, t):
+#         for idx, (embedding_layer, bn_layer) in enumerate(zip(self.step_embeddings, self.bn_layers)):
+#             t_embedding = embedding_layer(t)
+#             # x = self.layer1(x) if idx == 0 else self.layer2(x) if idx == 1 else self.layer3(x)
+#             x = self.layer1(x) if idx == 0 else self.layer2(x)
+#             x += t_embedding
+#             x = bn_layer(x)
+#             x = self.relu(x)
+#             x = self.dropout(x)  # Apply dropout after ReLU activation
+        
+#         x = self.layer4(x)
+#         x = self.sigmoid(x)
+#         return x
+
 class MLPDiffusion(nn.Module):    
     def __init__(self, d, n_steps):
-        super(MLPDiffusion,self).__init__()
+        super(MLPDiffusion, self).__init__()
         num_units = d
 
         self.layer1 = nn.Linear(d, num_units, bias=True)
         self.layer2 = nn.Linear(num_units, num_units, bias=True)
-        # self.layer3 = nn.Linear(num_units, num_units)
         self.layer4 = nn.Linear(num_units, d, bias=True)
 
-        self.sigmoid = nn.Sigmoid()
-        self.relu = nn.ReLU()                 # self.tanh = nn.Tanh()  relu更容易收敛
+        self.relu = nn.ReLU()
         self.dropout = nn.Dropout(0.5)
-        # self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(3)])
         self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(2)])
+        self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps, num_units) for _ in range(2)])
 
-        # self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(3)])
-        self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(2)])
-
+        
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -58,16 +106,16 @@ class MLPDiffusion(nn.Module):
     def forward(self, x, t):
         for idx, (embedding_layer, bn_layer) in enumerate(zip(self.step_embeddings, self.bn_layers)):
             t_embedding = embedding_layer(t)
-            # x = self.layer1(x) if idx == 0 else self.layer2(x) if idx == 1 else self.layer3(x)
             x = self.layer1(x) if idx == 0 else self.layer2(x)
             x += t_embedding
             x = bn_layer(x)
             x = self.relu(x)
-            x = self.dropout(x)  # Apply dropout after ReLU activation
+            x = self.dropout(x)
         
         x = self.layer4(x)
-        x = self.sigmoid(x)
+        x = F.softmax(x, dim=1)  # 使用softmax确保输出的每个维度的和为1
         return x
+
 
 
 class MLPDiffusionWithLambda(nn.Module):
