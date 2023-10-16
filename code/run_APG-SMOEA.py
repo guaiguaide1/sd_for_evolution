@@ -16,7 +16,7 @@ savedir = "result/{}/DIFF-adjlvxm/".format(benchmarks[instance-1])
 
 N, T, gen = 100, 20, 1500 # N:数据集大小   # T:邻居大小   # gen:与迭代次数不同，这里只生成子代的代数
 sigma, nr = 0.9, 2     # sigma:用于判断父母的选择，从邻居中还是从整个种群中    # 
-par = [1e-05, 0.3, round(1/size[instance-1], 5), 20, 0.5]  # [1e-05, 0.3, 0.03226, 20, 0.5]
+par = [1e-05, 0.3, round(1/size[instance-1], 5), 20, 0.5  ]  # [1e-05, 0.3, 0.03226, 20, 0.5]
 #  par内含四个元素，在对子代用变异算子时会用到，par[0]=alpha,par[1]=beta,par[2]=pm,par[3]=etam 就是参数
 # print(instance, benchmarks[instance-1])
 # print(par)

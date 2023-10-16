@@ -1,8 +1,3 @@
-#######################################################
-# 2023/10/4    11:00 
-
-#######################################################
-
 import torch 
 import torch.nn as nn 
 import torch.optim as optim 
@@ -10,80 +5,57 @@ import torch.nn.init as init
 from torch.autograd import Variable
 import random 
 import numpy as np 
-import torch.nn.functional as F
 from sklearn.utils import resample
-from imblearn.over_sampling import SMOTE
 
-# device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+# 矩阵X求梯度，根据梯度来进行数据增强
 
+def gradient_M(r):  
+    """计算解x相对于目标M的梯度"""
+    return -r.T
 
-# class MLPDiffusion(nn.Module):    
-#     def __init__(self, d, n_steps):
-#         super(MLPDiffusion,self).__init__()
-#         num_units = d
+def gradient_V(X, s, c):
+    """计算解x相对于目标V的梯度"""
+    s_expanded = s.T  # 使s的形状为(1, 31)
+    inter_result = s_expanded * s_expanded * X  # 逐元素乘法
+    return 2 * np.tensordot(inter_result, c, axes=([1], [0]))  # 矩阵乘法
 
-#         self.layer1 = nn.Linear(d, num_units, bias=True)
-#         self.layer2 = nn.Linear(num_units, num_units, bias=True)
-#         # self.layer3 = nn.Linear(num_units, num_units)
-#         self.layer4 = nn.Linear(num_units, d, bias=True)
-
-#         self.sigmoid = nn.Sigmoid()
-#         self.relu = nn.ReLU()                 # self.tanh = nn.Tanh()  relu更容易收敛
-#         self.dropout = nn.Dropout(0.5)
-#         # self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(3)])
-#         self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(2)])
-
-#         # self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(3)])
-#         self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(2)])
-
-#         self._initialize_weights()
-
-#     def _initialize_weights(self):
-#         for m in self.modules():
-#             if isinstance(m, nn.Linear):
-#                 if m == self.layer4:
-#                     # Xavier initialization for the layer with sigmoid activation
-#                     init.xavier_uniform_(m.weight)
-#                     if m.bias is not None:
-#                         init.constant_(m.bias, 0)
-#                 else:
-#                     # He initialization for layers with ReLU activation
-#                     init.kaiming_uniform_(m.weight, nonlinearity='relu')
-#                     if m.bias is not None:
-#                         init.constant_(m.bias, 0)
-#             elif isinstance(m, nn.BatchNorm1d):
-#                 init.constant_(m.weight, 1)
-#                 init.constant_(m.bias, 0)
-
-#     def forward(self, x, t):
-#         for idx, (embedding_layer, bn_layer) in enumerate(zip(self.step_embeddings, self.bn_layers)):
-#             t_embedding = embedding_layer(t)
-#             # x = self.layer1(x) if idx == 0 else self.layer2(x) if idx == 1 else self.layer3(x)
-#             x = self.layer1(x) if idx == 0 else self.layer2(x)
-#             x += t_embedding
-#             x = bn_layer(x)
-#             x = self.relu(x)
-#             x = self.dropout(x)  # Apply dropout after ReLU activation
-        
-#         x = self.layer4(x)
-#         x = self.sigmoid(x)
-#         return x
+def compute_gradients(X, r, s, c):
+    grad_M = gradient_M(r)
+    grad_V = gradient_V(X, s, c)
+    return grad_M, grad_V
+def perturb_solution_along_gradient(X, r, s, c, alpha=0.2):
+    """沿着梯度方向进行小幅度扰动"""
+    grad_M_val, grad_V_val = compute_gradients(X, r, s, c)
+    
+    # 根据两个梯度更新解x。这里的alpha是一个学习率参数，用于控制扰动的大小
+    new_X = X - alpha * (grad_M_val + 3 * grad_V_val)   # [M, V] = [return, risk]
+    
+    # 确保解的每一维数值在[0, 1]之间
+    new_X = np.clip(new_X, 0, 1)
+    
+    # 确保解的31维之和为1
+    new_X /= new_X.sum(axis=1, keepdims=True)
+    
+    return new_X
 
 class MLPDiffusion(nn.Module):    
     def __init__(self, d, n_steps):
-        super(MLPDiffusion, self).__init__()
+        super(MLPDiffusion,self).__init__()
         num_units = d
 
-        self.layer1 = nn.Linear(d, num_units, bias=True)
-        self.layer2 = nn.Linear(num_units, num_units, bias=True)
-        self.layer4 = nn.Linear(num_units, d, bias=True)
-
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(0.5)
+        self.layer1 = nn.Linear(d, num_units)
+        self.layer2 = nn.Linear(num_units, num_units)
+        # self.layer3 = nn.Linear(num_units, num_units)
+        self.layer4 = nn.Linear(num_units, d)
+        self.sigmoid = nn.Sigmoid()
+        self.relu = nn.ReLU()                 # self.tanh = nn.Tanh()  relu更容易收敛
+        # self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(3)])
         self.bn_layers = nn.ModuleList([nn.BatchNorm1d(num_units) for _ in range(2)])
-        self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps, num_units) for _ in range(2)])
 
-        
+        # self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(3)])
+        self.step_embeddings = nn.ModuleList([nn.Embedding(n_steps,num_units) for _ in range(2)])
+
+        # Initialize weights
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -106,31 +78,51 @@ class MLPDiffusion(nn.Module):
     def forward(self, x, t):
         for idx, (embedding_layer, bn_layer) in enumerate(zip(self.step_embeddings, self.bn_layers)):
             t_embedding = embedding_layer(t)
+            # x = self.layer1(x) if idx == 0 else self.layer2(x) if idx == 1 else self.layer3(x)
             x = self.layer1(x) if idx == 0 else self.layer2(x)
             x += t_embedding
             x = bn_layer(x)
             x = self.relu(x)
-            x = self.dropout(x)
         
         x = self.layer4(x)
-        x = F.softmax(x, dim=1)  # 使用softmax确保输出的每个维度的和为1
+        x = self.sigmoid(x)
         return x
 
-
-
-class MLPDiffusionWithLambda(nn.Module):
+# 双塔网络结构（Siamese Networks）是指两个完全相同的子网络并行运行，共享相同的权重，
+# 并对两个输入产生两个输出。这种网络的目的是比较这两个输出，通常用于计算两个输入之间的相似性或差异。
+# 这种网络结构常用于一系列任务，如人脸验证、签名验证和图像相似性匹配。
+class SiameseDiffModel(nn.Module):    
     def __init__(self, d, n_steps):
-        super(MLPDiffusionWithLambda, self).__init__()
-        self.diffNet = MLPDiffusion(d, n_steps)
-        # 初始化lambda_weight 为一个较小的正值，例如0.5, 并使其为可学习的参数
-        self.lambda_weight = nn.Parameter(torch.tensor(0.5))  # 如果是6的话得写成小数形式：6.  
-        # self.alpha = nn.Parameter(torch.tensor(5.))
-    def forward(self, x, t):
-        return self.diffNet(x, t)
+        super(SiameseDiffModel, self).__init__()
+        self.diffModel = MLPDiffusion(d, n_steps)
 
+        # 初始化可学习的系数 [0.01, 5]     最开始的初始化1, 1, 0.05
+        self.alpha = nn.Parameter(torch.tensor(28.))  # 如果是6的话得写成小数形式：6.  
+        self.beta = nn.Parameter(torch.tensor(8.))  # 如果是6的话得写成小数形式：6. 
+        self.gamma = nn.Parameter(torch.tensor(8.)) 
+
+    def forward_one(self, x, t):
+        return self.diffModel(x, t)
+
+    def forward(self, x1, t1, x2, t2): 
+        # x1和x2可以是正样本和负样本
+        output1 = self.forward_one(x1, t1)
+        output2 = self.forward_one(x2, t2)
+        return output1, output2
+
+# class MLPDiffusionWithLambda(nn.Module):
+#     def __init__(self, d, n_steps):
+#         super(MLPDiffusionWithLambda, self).__init__()
+#         self.diffNet = MLPDiffusion(d, n_steps)
+#         # 初始化可学习的系数 [0.01, 5]     最开始的初始化1, 1, 0.05
+#         self.alpha = nn.Parameter(torch.tensor(5.))  # 如果是6的话得写成小数形式：6.  
+#         self.beta = nn.Parameter(torch.tensor(5.))  # 如果是6的话得写成小数形式：6. 
+#         self.gamma = nn.Parameter(torch.tensor(5.)) 
+#     def forward(self, x, t):
+#         return self.diffNet(x, t)
 
 class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不一样
-    def __init__(self, dim, lr, epoches, batchsize=32):
+    def __init__(self, dim, lr, epoches, batchsize=8):
         # 1. 实例化的参数
         self.dim = dim 
         self.batchsize = batchsize 
@@ -160,25 +152,26 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
 
 
         # 3.初始化去噪模型
-        self.Denoise = MLPDiffusionWithLambda(self.dim, self.num_steps)
+        # self.Denoise = MLPDiffusion(self.dim, self.num_steps)
+        self.Denoise = SiameseDiffModel(self.dim, self.num_steps)
 
         # 4.损失函数
-        self.loss = nn.MSELoss()
+        self.MSEloss = nn.MSELoss()
 
         # 5.优化器
-        # weight_decay=1e-5   添加L2正则化，权重衰减     self.lr = 0.005
+        # weight_decay=1e-5   添加L2正则化，权重衰减
+        # self.optimizer = optim.Adam(self.Denoise.parameters(), lr=self.lr, weight_decay=1e-5)
         self.optimizer = optim.Adam(self.Denoise.parameters(), lr=self.lr, weight_decay=1e-5)
+    
 
     #前向加噪过程，计算任意时刻加噪后的xt，基于x_0和重参数化
     def q_x(self, x_0, t, center, cov):
         """可以基于x[0]得到任意时刻t的x[t]"""
-        
+
         noise = np.random.multivariate_normal(center, cov, x_0.shape[0])  
         noise = torch.from_numpy(np.maximum(np.minimum(noise, np.ones(( x_0.shape[0], self.dim))),
                                              np.zeros(( x_0.shape[0], self.dim)))).float()
 
-
-        # noise = torch.randn_like(x_0)   # noise是从某分布中生成的随机噪声
         alphas_t = self.alphas_bar_sqrt[t]
         alphas_1_m_t = self.one_minus_alphas_bar_sqrt[t]
 
@@ -186,145 +179,161 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
         return xt #在x[0]的基础上添加噪声
         # 上面就可以通过x0和t来采样出xt的值
 
-    def diffusion_loss_fn(self, x_0, negative_samples, center, cov):
-        ''' 
-        x_0: positive_samples
-        '''
-        # 使用ReLU确保lambda_weight始终为正
-        lambda_value = torch.relu(self.Denoise.lambda_weight)
+    def regularize_loss(self, l1_factor=0.005, l2_factor=0.005):
+        l1_loss = 0
+        l2_loss = 0
+        for param in self.Denoise.parameters():
+            l1_loss += torch.sum(torch.abs(param))
+            l2_loss += torch.sum(param ** 2)
         
+        return l1_factor * l1_loss + l2_factor * l2_loss
+
+    def loss_function(self, x_0_p, x_0_n, output_p, output_n, margin=0.5):
+        ''' 
+        x_0_p: positive_samples
+        x_0_n: negative_samples
+        output_p:
+        output_n:
+        '''
+
+        # 使用ReLU确保lambda_weight始终为正
         # 为了确保正样本的损失（loss_positive）在整体损失中占有更大的权重
-        # 模型的目标是更加关注正样本，并尽可能让生成的样本远离负样本
-        # 使用clamp确保lambda_weight在[a, b]范围内  
-        lambda_weight = torch.clamp(lambda_value, min=0.001, max=10)
-        # alpha = torch.clamp(torch.relu(self.Denoise.alpha), min=1, max=20)
-        # n_steps为中的时间步数，这里是500步
-        batch_size = x_0.shape[0]
-        n_steps = self.num_steps
+        alpha = torch.clamp(torch.relu(self.Denoise.alpha), min=1, max=30)
+        beta = torch.clamp(torch.relu(self.Denoise.beta), min=0.01, max=20)
+        gamma = torch.clamp(torch.relu(self.Denoise.gamma), min=0.01, max=20)
 
-        x_0 = torch.from_numpy(x_0).float()
-        negative_samples = torch.from_numpy(negative_samples).float()
-
-        t = torch.full((batch_size,), n_steps-1)
-        t = t.unsqueeze(-1)
-
-        xt = self.q_x(x_0, t, center, cov)
-
-        output = self.Denoise(xt, t.squeeze(-1))
-        # epsilon = (xt - x_0 * self.alphas_bar_sqrt[t]) / self.one_minus_alphas_bar_sqrt[t]  
-        # 根据公式反推epsilon, 以便进行损失计算
-        # return (epsilon - output).square().mean()
-
-        # 正样本的重建误差
-        loss_positive = (x_0 - output).square().mean()
-
-        # 负样本的L2距离
-        differences = output.unsqueeze(1) - negative_samples
-        loss_negative = -torch.mean((differences ** 2).sum(dim=2))
-
-        # 负样本的余弦距离
-        # cosine_dists = 1.0 - F.cosine_similarity(output.unsqueeze(1), negative_samples, dim=2)
-        # loss_negative = torch.mean(cosine_dists)
-
-        # loss_negative = -torch.mean(torch.norm(output.unsqueeze(1) - negative_samples, dim=2)**2)
-
-        # loss3: 计算两两之间的距离
-        distances = torch.cdist(output, output)
-        # 将对角线上的值(每个解与自身的距离)设置为0
-        mask = torch.eye(len(output)) == 1
+        # loss1: 正样本的重构损失 
+        recon_loss = nn.MSELoss()(x_0_p, output_p) - nn.MSELoss()(x_0_n, output_n)   
+        
+        # loss2: 对比损失  
+        positive_dist = torch.norm(output_p - x_0_p, dim=1)   # 正样本的L1损失
+        negative_dist = torch.norm(output_p - x_0_n, dim=1)
+        
+        # distances = torch.cdist(output_p, output_n)
+        # average_distances = distances.mean(dim=1)  # 计算每个x_output与所有x_negative之间的平均距离
+        # overall_average_distance = average_distances.mean()  # 你可能还想计算所有的平均距离的总平均，以用于损失
+        # negative_dist = overall_average_distance # 这个值可以被用作或者与其他损失结合作为对比损失
+        contrast_loss = torch.clamp(margin + positive_dist - negative_dist, min=0).mean()
+        # contrast_loss = torch.clamp(margin + positive_dist - negative_dist, min=0).mean()
+        # contrast_loss = -negative_dist
+        
+        # loss3: 计算正样本两两之间的距离
+        distances = torch.cdist(output_p, output_p)
+        mask = torch.eye(len(output_p)) == 1# 将对角线上的值(每个解与自身的距离)设置为0
         distances.masked_fill(mask, 0)
-        #计算每个解的多样性度量，即与其他解的平均距离
-        diversity_measures = distances.sum(1) / (len(output) - 1)
-        # 计算整体的多样性度量
-        overall_diversity = diversity_measures.mean()
-        # alpha是一个超参数，表示多样性正则化的权重
-        alpha = -5  # 注意这里的 alpha为负，是为了在total_loss减去多样性度量，因为我们希望鼓励更大的多样性
-        # alpha为自动学习的参数时，要将total_loss里面的alpha项改为负号
+        diversity_measures = distances.sum(1) / (len(output_p) - 1)#计算每个解的多样性度量，即与其他解的平均距离
+        overall_diversity = -diversity_measures.mean()# 计算整体的多样性度量
+        loss3 = overall_diversity
 
-        # 整合损失 = positive + negative  + diversity    
-        total_loss = loss_positive + lambda_weight * loss_negative + alpha * overall_diversity
-        # beta = 0.5
-        # total_loss = loss_positive + beta*loss_negative + alpha * overall_diversity
-
-        # 整合损失
-        # total_loss = loss_positive + lambda_weight * loss_negative
-
-        # return (x_0 - output).square().mean()
+        # output_p 和 x_0_n的距离也要尽可能地远
+        # differences = output_p.unsqueeze(1) - x_0_n
+        # loss_negative = -torch.mean((differences ** 2).sum(dim=2))
+        
+        # 正则化（可选）
+        reg_loss = self.regularize_loss()  # 您可以选择L1、L2或其他形式的正则化
+        
+        total_loss = alpha * recon_loss + beta * contrast_loss + gamma * loss3 + 0.5 * reg_loss
         return total_loss
 
-    def train(self, positive_samples, negative_samples):
-        # def train(self, pop_dec, samples_pool):
-        ''' 
-        pop_dec: shape(32, 31)   
-        samples_pool.shape=(10, 31)是当前种群中表现最好的10个解，计算他们的均值和方差，用以生成随机噪声，即作为随机噪声的均值和方差
-        
-        positive_sample 用于训练正样本，并且作为center, cov的标尺, 这里只选前10个样本用于训练
 
-        negative_sample 用于训练的负样本，余下的90个样本
+    def diffusion_loss_fn(self, x_0_p, x_0_n, center, cov):
+        # x_0_p: positive_samples
+        # x_0_n: negative_samples
+
+        # 对正样本处理，n_steps为中的时间步数，这里是100步
+        batch_size_p = x_0_p.shape[0]
+        n_steps = self.num_steps
+        x_0_p = torch.from_numpy(x_0_p).float()
+        t_p = torch.full((batch_size_p,), n_steps-1)
+        t_p = t_p.unsqueeze(-1)
+        xt_p = self.q_x(x_0_p, t_p, center, cov)
+
+        # 对负样本处理
+        
+        batch_size_n = x_0_n.shape[0]
+        n_steps = self.num_steps
+        x_0_n = torch.from_numpy(x_0_n).float()
+        t_n = torch.full((batch_size_n,), n_steps-1)
+        t_n = t_n.unsqueeze(-1)
+        xt_n = self.q_x(x_0_n, t_n, center, cov)
+
+
+        output_p, output_n = self.Denoise(xt_p, t_p.squeeze(-1),  xt_n, t_n.squeeze(-1))  # 这里让模型直接预测x_0而不是噪声
+
+        total_loss = self.loss_function(x_0_p, x_0_n, output_p, output_n)
+    
+        return total_loss
+    
+    def train(self, positive_samples, negative_samples, r, s, c):
+        ''' 
+        pop_dec: shape(32, 31)    用于训练的数据，这里只选前32个样本用于训练
+        samples_pool.shape=(10, 31)是当前种群中表现最好的10个解，计算他们的均值和方差，用以生成随机噪声，即作为随机噪声的均值和方差
         '''
         self.Denoise.train()
-        n, d = np.shape(positive_samples)
-        indices = np.arange(n)  # indices=array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,..., 30, 31])
+        # n, d = np.shape(positive_samples)
+        # indices = np.arange(n)  # indices=array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,..., 30, 31])
         
-        center = np.mean(positive_samples[:10, :], axis=0)  # (31,1)  axis=0，对第一个维度求均值    下面的 cov 矩阵提供了一个关于这10个样本在31个特征上相互关系的全面视图。
-        cov = np.cov(positive_samples[:10, :].reshape((d, positive_samples[:10, :].size // d)))#  (10, 31)->(31, 10)  conv=(31,31)  np.cov 函数用于计算协方差矩阵   samples_pool.shape=(10, 31),   
-        
-        # 定义目标样本数量
-        target_samples = 50
+        center = np.mean(positive_samples, axis=0)  # (31,1)  axis=0，对第一个维度求均值    下面的 cov 矩阵提供了一个关于这10个样本在31个特征上相互关系的全面视图。
+        cov = np.cov(positive_samples[:10, :].reshape((self.dim, positive_samples[:10, :].size // self.dim)))#  (10, 31)->(31, 10)  conv=(31,31)  np.cov 函数用于计算协方差矩阵   samples_pool.shape=(10, 31),   
 
-        # # 过采样正样本至50个
-        # upsampled_positive_samples = resample(positive_samples, 
-        #                                     replace=True, 
-        #                                     n_samples=target_samples,
-        #                                     random_state=123)
+        # negative_samples = torch.from_numpy(negative_samples).float()
 
-        # 欠采样负样本至50个
-        downsampled_negative_samples = resample(negative_samples, 
-                                        replace=False, 
-                                        n_samples=target_samples,
+        # 创建一个空的 numpy 数组, 数据增强操作
+        combined_perturb_x = np.array([])
+        alphas = [0.1 * i for i in range(1, 21, 2)]   # 10个
+        for i in alphas:
+            perturb_x = perturb_solution_along_gradient(positive_samples, r, s, c, i)
+            
+            # 将 perturb_x 堆叠到 combined_perturb_x 中
+            if combined_perturb_x.size == 0:
+                combined_perturb_x = perturb_x
+            else:
+                combined_perturb_x = np.vstack((combined_perturb_x, perturb_x))
+
+        # 上采样负样本至100个
+        upsample_negative_samples = resample(negative_samples, 
+                                        replace=True, 
+                                        n_samples=100,
                                         random_state=123)
         
-        y_positive = [1] * len(positive_samples)
-        y_negative = [0] * len(downsampled_negative_samples)
-        # 拼接数据
-        X = np.vstack((positive_samples, downsampled_negative_samples))
-        y = np.array(y_positive + y_negative)
-        # 使用SMOTE
-        smote = SMOTE(sampling_strategy='auto', random_state=42, k_neighbors=5)  # 设置k_neighbors为一个合适的值
-        X_resampled, y_resampled = smote.fit_resample(X, y)
-        # 现在，删除临时的负样本并只选择正样本
-        X_resampled = X_resampled[y_resampled == 1]
-        y_resampled = y_resampled[y_resampled == 1]
-
+        n, d = np.shape(combined_perturb_x)
+        indices = np.arange(n)  # indices=array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,..., 30, 31])
+        iter_no = (n + self.batchsize - 1) // self.batchsize
 
         for epoch in range(self.epoches):
-            loss = 0
-            self.optimizer.zero_grad()
-            # loss = self.diffusion_loss_fn(positive_samples, negative_samples, center, cov)
-            loss = self.diffusion_loss_fn(X_resampled, downsampled_negative_samples, center, cov)
+            losses = 0
+            for iteration in range(iter_no):
 
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.Denoise.parameters(), 1.)
-            self.optimizer.step()
-            # print("Epoch[{}], loss: {:.5f}".format(epoch, loss))
+                self.optimizer.zero_grad()
+                given_p = combined_perturb_x[iteration * self.batchsize: (1 + iteration) * self.batchsize, :]
+                given_n = upsample_negative_samples[iteration * self.batchsize: (1 + iteration) * self.batchsize, :]
+                # loss = self.diffusion_loss_fn(positive_samples, negative_samples, center, cov)
+                # loss = self.diffusion_loss_fn(X_resampled, downsampled_negative_samples, center, cov)
+                loss = self.diffusion_loss_fn(given_p, given_n, center, cov)
 
-        random.shuffle(indices)
-        positive_samples = positive_samples[indices, :]   # 感觉这里应该加上label = labels[indices, :]
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.Denoise.parameters(), 1.)
+                self.optimizer.step()
+                losses += loss
+                # print("Epoch[{}], loss: {:.5f}".format(epoch, loss))
 
+            random.shuffle(indices)
+            combined_perturb_x = combined_perturb_x[indices, :]   # 感觉这里应该加上label = labels[indices, :]
+            upsample_negative_samples = upsample_negative_samples[indices, :]
 
-    def p_sample_loop(self, x_T):
-        # """从x[T]恢复x[T-1]、x[T-2]|...x[0]"""
+    def p_sample_loop(self, x_T, center, cov):
+        """从x[T]恢复x[T-1]、x[T-2]|...x[0]"""
         cur_x = x_T
 
-        x_0 = self.p_sample(cur_x, self.num_steps - 1)
+        x_0 = self.p_sample(cur_x, self.num_steps - 1, center, cov)
         return x_0
 
-    def p_sample(self, x, t): # 参数重整化的过程
+    def p_sample(self, x, t, center, cov): # 参数重整化的过程
         """从x[t]采样t-1时刻的重构值，即从x[t]采样出x[t-1]"""
         t = torch.tensor([t])
-        x_0 = self.Denoise(x,t)
+        x_0 = self.Denoise.diffModel(x,t)
 
-        return x_0 
+        return x_0
     
 
     def generate(self, sample_noises, population_size):# population_size=100
@@ -337,7 +346,7 @@ class Diffusion(object):  # 注意：这里的batchsize和GAN里面的顺序不�
                                              np.zeros((population_size, self.dim)))).float()
 
         with torch.no_grad():
-            # decs= self.p_sample_loop(Variable(noises.cpu()).float(), center, cov).cpu().data.numpy()
-            decs= self.p_sample_loop(Variable(noises.cpu()).float()).cpu().data.numpy()
+            decs= self.p_sample_loop(Variable(noises.cpu()).float(), center, cov).cpu().data.numpy()
     
         return decs 
+    

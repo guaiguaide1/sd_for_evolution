@@ -7,7 +7,36 @@ import random
 import numpy as np
 
 # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# 矩阵X求梯度，根据梯度来进行数据增强
 
+def gradient_M(r):  
+    """计算解x相对于目标M的梯度"""
+    return -r.T
+
+def gradient_V(X, s, c):
+    """计算解x相对于目标V的梯度"""
+    s_expanded = s.T  # 使s的形状为(1, 31)
+    inter_result = s_expanded * s_expanded * X  # 逐元素乘法
+    return 2 * np.tensordot(inter_result, c, axes=([1], [0]))  # 矩阵乘法
+
+def compute_gradients(X, r, s, c):
+    grad_M = gradient_M(r)
+    grad_V = gradient_V(X, s, c)
+    return grad_M, grad_V
+def perturb_solution_along_gradient(X, r, s, c, alpha=0.2):
+    """沿着梯度方向进行小幅度扰动"""
+    grad_M_val, grad_V_val = compute_gradients(X, r, s, c)
+    
+    # 根据两个梯度更新解x。这里的alpha是一个学习率参数，用于控制扰动的大小
+    new_X = X - alpha * (grad_M_val + 3 * grad_V_val)   # [M, V] = [return, risk]
+    
+    # 确保解的每一维数值在[0, 1]之间
+    new_X = np.clip(new_X, 0, 1)
+    
+    # 确保解的31维之和为1
+    new_X /= new_X.sum(axis=1, keepdims=True)
+    
+    return new_X
 
 class Generator(nn.Module):
     
@@ -58,15 +87,35 @@ class GAN(object):# d=31, batchsize=8, lr=0.0001, epoches=200, n_noise=31
         self.epoches = epoches
         self.batchsize = batchsize
 
-    def train(self, pop_dec, labels, samples_pool):  # pop_dec.shape=(100, 31), labels.shape=(100, 1), samples_pool.shape=(10, 31)
+    def train(self, pop_dec, labels, samples_pool, r, s, c):  # pop_dec.shape=(100, 31), labels.shape=(100, 1), samples_pool.shape=(10, 31)
         self.D.train()     # samples_pool，是当前种群中表现最好的10个解，计算他们的均值和方差，用以生成随机噪声，即作为随机噪声的均值和方差
         self.G.train()
-        n, d = np.shape(pop_dec)  # n=100,  d=31
-        indices = np.arange(n)  # indices=array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,..., 98, 99])
         
         center = np.mean(samples_pool, axis=0)  # (31,1)  axis=0，对第一个维度求均值    下面的 cov 矩阵提供了一个关于这10个样本在31个特征上相互关系的全面视图。
-        cov = np.cov(samples_pool[:10, :].reshape((d, samples_pool[:10, :].size // d)))#  (10, 31)->(31, 10)  conv=(31,31)  np.cov 函数用于计算协方差矩阵   samples_pool.shape=(10, 31),   
+        cov = np.cov(samples_pool[:10, :].reshape((self.d, samples_pool[:10, :].size // self.d)))#  (10, 31)->(31, 10)  conv=(31,31)  np.cov 函数用于计算协方差矩阵   samples_pool.shape=(10, 31),   
+
+        # 创建一个空的 numpy 数组, 数据增强操作,生成200个新的正样本
+        combined_perturb_x = np.array([])
+        alphas = [0.1 * i for i in range(1, 21)]
+        for i in alphas:
+            perturb_x = perturb_solution_along_gradient(samples_pool, r, s, c, i)
+            
+            # 将 perturb_x 堆叠到 combined_perturb_x 中
+            if combined_perturb_x.size == 0:
+                combined_perturb_x = perturb_x
+            else:
+                combined_perturb_x = np.vstack((combined_perturb_x, perturb_x))
+
+                n, d = np.shape(combined_perturb_x)
+                
+        labels_perturb_x = np.ones((200,1))
+        labels_aug = np.vstack((labels, labels_perturb_x))
+
+        pop_dec_aug = np.vstack((pop_dec, combined_perturb_x))
+        n, d = np.shape(pop_dec_aug)  # n=300,  d=31
+        indices = np.arange(n)  # indices=array([ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,..., 98, 99])
         iter_no = (n + self.batchsize - 1) // self.batchsize  # batchsize=8   n=100  iter_no:代表着在给定的设置中，需要多少批（batch）迭代来处理所有 n 个样本。其中，每个批的大小由 self.batchsize（在这个例子中是8）确定。
+
 
         for epoch in range(self.epoches): # epoches=200
             g_train_losses = 0
@@ -75,8 +124,8 @@ class GAN(object):# d=31, batchsize=8, lr=0.0001, epoches=200, n_noise=31
 
                 
                 self.D.zero_grad()
-                given_x = pop_dec[iteration * self.batchsize: (1 + iteration) * self.batchsize, :]   # 一个batchsize的解   given_x=(8, 31)
-                given_y = labels[iteration * self.batchsize: (1 + iteration) * self.batchsize]   # 对应的一个batchsize的label  given_y=(8,1)
+                given_x = pop_dec_aug[iteration * self.batchsize: (1 + iteration) * self.batchsize, :]   # 一个batchsize的解   given_x=(8, 31)
+                given_y = labels_aug[iteration * self.batchsize: (1 + iteration) * self.batchsize]   # 对应的一个batchsize的label  given_y=(8,1)
                 batch_size = np.shape(given_x)[0]  # 因为最后一个batch可能没有8个，所以这里要记录一下batch_size的大小
 
                 given_x_ = Variable(torch.from_numpy(given_x).cpu()).float()
@@ -130,8 +179,8 @@ class GAN(object):# d=31, batchsize=8, lr=0.0001, epoches=200, n_noise=31
             # print("Epoch[{}], loss: {:.5f}".format(epoch, g_train_losses))
 
             random.shuffle(indices)
-            pop_dec = pop_dec[indices, :]   # 感觉这里应该加上label = labels[indices, :]
-            label = labels[indices, :]   #  xwf
+            pop_dec_aug = pop_dec_aug[indices, :]   # 感觉这里应该加上label = labels[indices, :]
+            labels_aug = labels_aug[indices, :]   #  xwf
 
     def generate(self, sample_noises, population_size):  # sample_noises.shape=(10, 31)  population_size=100
 

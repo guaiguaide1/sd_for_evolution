@@ -1,1 +1,1 @@
-Reference point on hangseng: (5.594e-06,1.087e+00)
+Reference point on hangseng: (3.761e-08,1.087e+00)

@@ -31,7 +31,7 @@ for i, market in enumerate(markets):
     os.system(cmd0)
     os.system(cmd1)
     for alg in algs:
-        best = get_best(market, alg)  # get best runtime no.
+        best = get_best(market, alg)  # get best runtime no.找到IGD最小的那次实验
         # copy best population file to final_pop folder
         cmd2 = "cp ../result/{}/{}/{}.csv ./datasets/{}/final_pop/{}.csv".format(market, alg, best, market, alg)
         os.system(cmd2)

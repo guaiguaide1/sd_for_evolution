@@ -13,40 +13,33 @@ from function.nsga2_tool import fast_non_dominated_sort
 from function.repair_tool import repair
 from function.GAN_model import GAN
 from function.Diffusion_model import Diffusion
+from function.VAE_model import VAE 
 import sys
 import random
 import os 
 
-from def_metric import igd
+from def_metric import igd, spread, delta
 
 discussion = True
 
 def update_alpha(population, alpha_list, scaling_factor=1, avg_entropy=0):  
-
-    
+    # scaling_factor=1.1  
     N = len(population)
     p = np.zeros(N)  
 
-   
     for i in range(N):
-
+        # 对于种群中的每个个体，计算其与其他所有个体的欧氏距离的平方和
         p[i] = np.sum(np.abs(population[i]-population) ** 2)  
         p[i] = np.exp(-p[i] / (2 * np.var(p)))
-       
         p[i] /= np.sum(p)  
 
- 
     entropy = -np.sum(p * np.log2(p))
 
-  
-    if entropy < avg_entropy:
-       
+    if entropy < avg_entropy:  # old: < 
         alpha = max(alpha_list[-1] / scaling_factor, 0)
     else:
-      
         alpha = min(alpha_list[-1] * scaling_factor, 1)
 
- 
     alpha = alpha + 0.1 * (alpha_list[0] - alpha_list[-1])  
     alpha = max(min(alpha, 1), 0)  
     alpha = round(alpha, 4)
@@ -54,7 +47,6 @@ def update_alpha(population, alpha_list, scaling_factor=1, avg_entropy=0):
     return alpha, entropy
     
 def data_format_transform(P, d):  # P.shape=(100, 31, 1) , d=31
-
     P_100 = []
     for i in range(len(P)):
         x = []
@@ -86,6 +78,7 @@ def array_merge(F):  # 数组融合，F = [[1, 7, 16, 61, 68, 78, 90], [43, 94, 
         index = index + F[i]
     return index
 
+
 def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cgen, Diff):  # N是种群大小, N=100   num=0,迭代的次数，即第几次迭代
     # Diff=0 : 用Gan来训练     Diff=1:用Diff来训练
     t, count, temp = 0, 0, 0   
@@ -94,16 +87,22 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
     upper = np.ones([1, _])  # (1,31)
     lower = np.zeros([1, _])  # (1, 31)
     
-    P = population(lb, ub, N)  # (100, 31)初始化种群
+    P = population(lb, ub, N)#(100, 31)初始化种群  P是一个列表，P[0]是一个ndarray
 
     objs = objective(P, port, r, s, c) # # port代表传入的函数名称evaluate,评估种群内的解的效果  objs=(100, 2)代表把种群里面的初始所有解都求一遍(return, risk)
 
     F1, F2 = extreme_point(objs)   #求出初始所有解的(return, risk)包含负收益最小的(return, risk)=F1=[-0.00401471,  0.00114329]     包含risk最小的(return, risk) F2=[-0.0035831 ,  0.00099589]这个函数用于从一个多目标优化问题的解集中找到最小收益和最小风险所对应的解（极值点），以便在多目标优化中进行进一步的分析或决策。
     net = GAN(_, 8, 0.0001, 200, _)    # _=31
     Diffnet = Diffusion(_, 0.005, 50)  # dim, lr, epoch,   按理说epoch应该设置为1500时，loss才收敛
+    VAEnet = VAE(31, 0.001, 200)
     indicator_value = igd(objs, mp, vp)   # obj=(100, 2)  mp=(2000, 1), vp=(2000,1)    igd: 指标值，是一个实数，越小越好，越小说明种群里的解得到的[return, risk]就越接近Pareto front解
     print("{}\t{}".format(t, indicator_value))
-    
+
+    # compute extreme points
+    # F = np.array([mp[np.argmin(vp)], min(vp)])
+    # L = np.array([max(mp), vp[np.argmax(mp)]])
+    # temp_delta = 0
+
     k = 0
     alpha = 0.1  # Rn>alpha, use AEE to generate offspring; else, use GAN to generate offspring
 
@@ -125,18 +124,16 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
                 y = operator(P, i, b, lb, ub, par)   #operator:  adj_lvxm  i:当前要变异的个体的索引。 y.shape=(31,1)变异后的个体
                 # b: 个体 i 的邻居索引，从邻居中双随机选择一个个体，用于和i一起来进行变异操作。
             else :
-                if Diff: # 1: Diff
+                if Diff==1: # 1: Diff
                     if k % 20 == 0 or k == 0:
-                        # 想自己生成500个样本，从中挑前50个好的
-                        # P1 = population(lb, ub, 5*N)   # 自己生成的500个初始样本
-                        # objs1 = objective(P1, port, r, s, c)
-                        # F1, rank1 = fast_non_dominated_sort(objs1)
-                        # index1 = array_merge(F1)
-                        # positive_indices = index1[:50]
+                        label = np.zeros((N, 1))    # N=100 种群的大小  label.shape=(100,1)
 
                         F, rank = fast_non_dominated_sort(objs)
                         index = array_merge(F)
-                        positive_indices = index[:10]
+                        positive_indices = index[:10]    # 正样本的个数
+
+                        label[positive_indices, :] = 1   #  label.shape=(100,1)，把index中比较好的解的索引位置的label设置为1
+
                         # 创建包含所有索引的列表
                         all_indices = list(range(N))
 
@@ -154,14 +151,57 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
                         positive_samples = positive_samples / np.tile(upper, (np.shape(positive_samples)[0], 1))
                         # input_dec = P_100[index1, :]#   取前32个用于diffusion的训练
                         # input_dec = (input_dec - np.tile(lower, (np.shape(input_dec)[0], 1))) / np.tile(upper - lower,(np.shape(input_dec)[0], 1))
-                        negative_samples = (negative_samples - np.tile(lower, (np.shape(negative_samples)[0], 1))) / np.tile(upper - lower,(np.shape(negative_samples)[0], 1))
+                        # negative_samples = (negative_samples - np.tile(lower, (np.shape(negative_samples)[0], 1))) / np.tile(upper - lower,(np.shape(negative_samples)[0], 1))
+                        input_dec = (pop_dec - np.tile(lower, (np.shape(pop_dec)[0], 1))) / np.tile(upper - lower,(np.shape(pop_dec)[0], 1))
+                        
                         if t % 100 == 0 or t == 0:
                             # Diffnet.train(input_dec, pool)
-                            Diffnet.train(positive_samples, negative_samples)
+                            # Diffnet.train(input_dec, label, positive_samples)
+                            Diffnet.train(positive_samples, negative_samples, r, s, c)
+                            # Diffnet.train(positive_samples, positive_samples, r, s, c)
                         
                         # off = Diffnet.generate(ref_dec / np.tile(upper, (np.shape(ref_dec)[0], 1)), N) * np.tile(upper, (N, 1))
                         # off = Diffnet.generate(positive_samples[:10, :] / np.tile(upper, (np.shape(positive_samples[:10, :])[0], 1)), N) * np.tile(upper, (N, 1))
                         off = Diffnet.generate(positive_samples / np.tile(upper, (np.shape(positive_samples)[0], 1)), N) * np.tile(upper, (N, 1))
+                    
+
+                        off_100 = data_format_recover(off, _)
+                        # off_100_transformed = [np.reshape(item, (-1, 1)) for item in off_100]  # 是否进行格式转换？
+                        # objs_100_y = objective(off_100_transformed, port, r, s, c) 
+                        
+                        objs_100_y = objective(off_100, port, r, s, c)           
+                        F_y, rank_y = fast_non_dominated_sort(objs_100_y)
+                        
+                        index_y = array_merge(F_y)
+                        k = 0
+
+                elif Diff == 2: # VAE 
+                    if k % 20 == 0 or k == 0:
+                        F, rank = fast_non_dominated_sort(objs)
+                        index = array_merge(F)
+                        positive_indices = index[:10]
+                        # 创建包含所有索引的列表
+                        all_indices = list(range(N))
+                        # 从all_indices中移除positive_indices
+                        negative_indices = list(set(all_indices) - set(positive_indices))
+
+                        P_100 = data_format_transform(P, _)
+                        pop_dec = P_100
+
+                        positive_samples = P_100[positive_indices, :]
+                        negative_samples = P_100[negative_indices, :]
+
+                        positive_samples = positive_samples / np.tile(upper, (np.shape(positive_samples)[0], 1))
+                        negative_samples = (negative_samples - np.tile(lower, (np.shape(negative_samples)[0], 1))) / np.tile(upper - lower,(np.shape(negative_samples)[0], 1))
+                        input_dec = (pop_dec - np.tile(lower, (np.shape(pop_dec)[0], 1))) / np.tile(upper - lower,(np.shape(pop_dec)[0], 1))
+                        
+                        if t % 100 == 0 or t == 0:
+                            # Diffnet.train(input_dec, pool)
+                            VAEnet.train(input_dec, positive_samples, negative_samples)
+                        
+                        # off = Diffnet.generate(ref_dec / np.tile(upper, (np.shape(ref_dec)[0], 1)), N) * np.tile(upper, (N, 1))
+                        # off = Diffnet.generate(positive_samples[:10, :] / np.tile(upper, (np.shape(positive_samples[:10, :])[0], 1)), N) * np.tile(upper, (N, 1))
+                        off = VAEnet.generate(N) * np.tile(upper, (N, 1))
                     
 
                         off_100 = data_format_recover(off, _)
@@ -170,7 +210,7 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
                         
                         index_y = array_merge(F_y)
                         k = 0
-                    
+
                 else: #0: Gan
                     if k % 20 == 0 or k == 0:
 
@@ -192,7 +232,8 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
                         # pop_dec = P_100    # pop_dec是格式转换后的种群解  pop_dec.shape=(100, 31)
                         input_dec = (pop_dec - np.tile(lower, (np.shape(pop_dec)[0], 1))) / np.tile(upper - lower,(np.shape(pop_dec)[0], 1))
                         if t % 100 == 0 or t == 0:   # input_dec.shape=(100, 31)  label=(100,1)  label里面的某些位置为1表示这个index对应的解比较好
-                            net.train(input_dec, label, pool)
+                            # net.train(input_dec, label, pool)
+                            net.train(input_dec, label, pool, r, s, c)
 
                         off = net.generate(ref_dec / np.tile(upper, (np.shape(ref_dec)[0], 1)), N) * np.tile(upper, (N, 1))   # (100, 31)
                 
@@ -253,23 +294,28 @@ def optimize(instance, N, T, gen, operator, name, num, par, sigma, nr, cflag, cg
 
 
 
-        if t in [0, 1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 150, 200, 300, 400, 500, 600, 700, 800] and discussion and instance == 5:
+        if t in [0, 1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 150, 200, 300] and discussion and instance == 5:
             pd.DataFrame(objs, columns=["return", "risk"]).to_csv(
                 f'pop/{name}_pop_gen_{t}.csv', index=False)
 
-        #     if name == 'de':
-        #         pd.DataFrame(objs, columns=["return", "risk"]).to_csv(
-        #             f'pop/const_pop_gen_{t}.csv', index=False)
+            if name == 'de':
+                pd.DataFrame(objs, columns=["return", "risk"]).to_csv(
+                    f'pop/const_pop_gen_{t}.csv', index=False)
 
         indicator_value = igd(objs, mp, vp)  # compute IGD metric
         print("{}\t{}".format(t, indicator_value))  # 知道了，这里的t不一定要到1500才结束，下面当IGD保持100代不变的时候就braek
+        
+        # Delta
+        # delta_value = delta(objs, F, L)   # compute MaxSpread metric
 
+
+        # if (np.abs(indicator_value - temp) >= 1e-05) & (np.abs(delta_value - temp_delta) >= 1e-05):
         if np.abs(indicator_value - temp) >= 1e-05:
             temp = indicator_value
+            # temp_delta = delta_value 
             count = 0
         else:
             count += 1
-        # if count >= cgen and cflag is True:
-        if count >= cgen and cflag and indicator_value < 3e-05:
+        if count >= cgen and cflag is True:
             break
     return objs
