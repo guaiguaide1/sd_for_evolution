@@ -1,4 +1,0 @@
-Reference point on hangseng: (5.594e-06,1.087e+00)
-Reference point on dax: (2.353e-05,1.910e+00)
-Reference point on ftse: (2.382e-05,2.257e+00)
-Reference point on sp: (3.728e-05,1.974e+00)

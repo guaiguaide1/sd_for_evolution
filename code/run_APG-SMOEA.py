@@ -22,7 +22,7 @@ par = [1e-05, 0.3, round(1/size[instance-1], 5), 20, 0.5  ]  # [1e-05, 0.3, 0.03
 # print(par)
 # print("====================================")
 
-for i in range(rep):
+for i in range(rep): 
     np.random.seed(500+i)
     random.seed(500+i)
     print("Start {}-th experiment.".format(i+1))
