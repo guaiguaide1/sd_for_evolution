@@ -20,8 +20,9 @@ def get_best(market, alg):
     return np.argmin(igd_lst) + 1  # 使用numpy的argmin函数找到igd_lst列表中的最小值的索引，并返回其值加1（因为索引从0开始）。
 
 
-# markets = ["hangseng", "dax", "ftse", "sp", "nikkei"]
-markets = ["hangseng"]
+markets = ["hangseng", "dax", "ftse" , "sp"]  #, "sp" , "nikkei"
+# markets = ["hangseng", "dax"]
+# markets = ["hangseng"]
 
 # algs = ["de", "dem", "ga", "lvx", "adjlvx", "lvxm", "adjlvxm", "nsga2", "norm", "unif"]  # 改为10个算子
 algs = ["adjlvxm", "dem", "de", "ga", "nsga2", "apg", "diff"]

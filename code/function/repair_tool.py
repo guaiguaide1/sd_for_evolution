@@ -26,7 +26,7 @@ def repair(y, lb, ub):  # 刚传进来的y.shape=(31, 1), max=1348.03   min=-0.0
     for i in range(len(y)):
         y[i] = max(y[i], lb[i])  #负数变为0, 
     s = np.sum(y)   
-    if s != 0:
+    if s > 1e-04:
         y = y / s    #缩放使所有变量总和=1,  归一化操作
     else:
         # print("Repair Error: all components are 0!")

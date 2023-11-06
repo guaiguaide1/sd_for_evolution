@@ -8,7 +8,7 @@ from function.APG_SMOEA_framework import optimize
 
 
 instance = int(sys.argv[1])    # 在这里接受了参数，在数据集instance上进行测试  ，# instance=1   用来判断使用的数据集
-rep = 51   # 迭代的次数
+rep = 51   # 迭代的次数    # 31 85 89 98 225
 benchmarks = ["hangseng", "dax", "ftse", "sp", "nikkei"]   # 包含多个股市的名称
 size = [31, 85, 89, 98, 225]    # 数据集大小
 # savedir = "result/{}/GAN-adjlvxm/".format(benchmarks[instance-1])   # 'result/hangseng/GAN-adjlvxm/'

@@ -143,7 +143,7 @@ def lvx(P, i, b, lb, ub, par):
 # 将原有的levy-flight变异公式修改 引入参数λ做实验观察效果
 # 2020-11-26 frank
 
-# adj_lvxm-多项式变异算子(5个参数)
+# adj_lvxm-多项式变异算子(5个参数)  # par=[1e-05, 0.3, 0.03226, 20, 0.5]
 def adj_lvxm(P, i, b, lb, ub, par):  # i: 当前要变异的个体的索引
     alpha, beta, pm, etam, epsilon = par[0], par[1], par[2], par[3], par[4]
     np.random.shuffle(b)
@@ -154,6 +154,66 @@ def adj_lvxm(P, i, b, lb, ub, par):  # i: 当前要变异的个体的索引
     y = poly_mutation(y, lb, ub, etam, pm)  # 对变异后的个体 `y` 进行多项式变异操作，但这次使用参数 `etam` 和 `pm` 来控制多项式变异
     y = repair(y, lb, ub)  # 再次对变异后的个体 `y` 进行修复操作，确保它在上下界 `lb` 和 `ub` 内
     return y   # （31， 1)
+
+
+def enhanced_lvxm(P, i, b, lb, ub, par):
+    alpha, beta, pm, etam, epsilon_init, epsilon_final, gen, max_gen = par
+    epsilon = epsilon_init + (epsilon_final - epsilon_init) * (gen / max_gen)  # 动态参数调整
+
+    np.random.shuffle(b)
+    p1 = P[i]
+    p2, p3, p4 = P[b[0]], P[b[1]], P[b[2]]
+    
+    # 差分进化
+    diff_vector = alpha * (p2 - p3) + (1 - alpha) * (p4 - p1)
+    
+    # 使用Levy飞行生成的步长与差分进化生成的方向结合
+    y = p1 + epsilon * diff_vector + (1 - epsilon) * levy(beta, len(p1)) * diff_vector
+    
+    y = repair(y, lb, ub)
+    y = poly_mutation(y, lb, ub, etam, pm)
+    y = repair(y, lb, ub)
+    
+    return y
+
+
+
+
+def gaussian_mutation(p, mu, sigma):
+    if np.random.uniform(0, 1) < 0.01:
+        p = p + np.random.normal(mu, sigma, size=p.shape)
+    return p
+
+def crossover(p1, p2):
+    if np.random.uniform(0, 1) < 1:
+        alpha = np.random.uniform(0, 1, size=p1.shape)
+        return alpha * p1 + (1 - alpha) * p2
+    else:
+        return p1
+
+def adj_lvxm_improved(P, i, b, lb, ub, par):
+    gamma, delta, alpha, beta, pm, etam, epsilon, mu, sigma = par
+    np.random.shuffle(b)
+    p1 = P[i]
+    p2 = P[b[0]]
+    y = p1 * epsilon + alpha * levy(beta, len(p1)) * (p1 - p2) * (1 - epsilon)
+    y = repair(y, lb, ub)
+    y = crossover(y, p2)
+    y = poly_mutation(y, lb, ub, etam, pm)
+    # y = gaussian_mutation(y, mu, sigma)
+    y = repair(y, lb, ub)
+    return y
+
+
+def diff(p1, p2, lb, ub, par):
+    alpha, beta, pm, etam, epsilon = par[0], par[1], par[2], par[3], par[4]
+    y = p1 * epsilon + alpha * levy(beta, len(p1)) * (p1 - p2) * (1 - epsilon)  # 公式8    y=（31， 1）
+    y = repair(y, lb, ub)# 对变异后的个体 `y` 进行修复操作，确保它在上下界 `lb` 和 `ub` 内。
+    y = poly_mutation(y, lb, ub, etam, pm)  # 对变异后的个体 `y` 进行多项式变异操作，但这次使用参数 `etam` 和 `pm` 来控制多项式变异
+    y = repair(y, lb, ub)  # 再次对变异后的个体 `y` 进行修复操作，确保它在上下界 `lb` 和 `ub` 内
+    return y   # （31， 1)
+
+
 
 
 # adj_lvx-多项式变异算子(3个参数)

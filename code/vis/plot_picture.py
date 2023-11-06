@@ -32,9 +32,9 @@ def load_sol(market, alg):
 
 
 styles = ["paper"]
-# markets = ["hangseng", "dax", "ftse", "sp", "nikkei"]
-markets = ["hangseng"]
-
+markets = ["hangseng", "dax", "ftse", "sp" ]  #, "sp" , "nikkei"
+# markets = ["hangseng", "dax"]
+# markets = ["hangseng"]
 # xlims：可能用于表示某种图形或数据的x轴的范围
 # xlims中的第一个元组(0.001, 0.0015)可能表示x轴的范围从0.001到0.0015
 xlims = [(0.001, 0.0015), (0.0005, 0.0008), (0.0003, 0.0004), (0.0005, 0.001), (0.0004, 0.0008)]

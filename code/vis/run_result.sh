@@ -27,9 +27,9 @@ python compute_metric.py >> ./report/refpoint.txt
 echo "FINISHED　COMPUTING METRICS !"
 #####################统计结果#########################
 python compute_statistics.py 1 >> ./report/hangseng.txt
-# python compute_statistics.py 2 >> ./report/dax.txt
-# python compute_statistics.py 3 >> ./report/ftse.txt
-# python compute_statistics.py 4 >> ./report/sp.txt
+python compute_statistics.py 2 >> ./report/dax.txt
+python compute_statistics.py 3 >> ./report/ftse.txt
+python compute_statistics.py 4 >> ./report/sp.txt
 # python compute_statistics.py 5 >> ./report/nikkei.txt
 echo "FINISHED　STATISTICAL PROCESSING !"
 #####################清理缓存#########################

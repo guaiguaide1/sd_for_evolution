@@ -1,0 +1,28 @@
+nikkei.GD: NSGA-II MOEA/D-AEE
+nikkei.Spacing: MOEA/D-DE NSGA-II
+nikkei.MaxSpread: APG-SMOEA MOEA/D-DEM
+nikkei.Delta: MOEA/D-AEE APG-SMOEA
+nikkei.IGD: MOEA/D-AEE MOEA/D-DEM
+nikkei.Hypervolume: APG-SMOEA MOEA/D-AEE
+nikkei
+----------------------------------------------------------------------------------
+                    MOEA/D-AEE  MOEA/D-DEM  MOEA/D-DE  MOEA/D-GA  NSGA-II  APG-SMOEA  DIFF-SMOEA
+Metric                                                                                          
+GD          Best      5.32e-06    5.10e-06   5.93e-05   9.95e-06 2.54e-06   6.13e-06    4.10e-05
+            Median    7.36e-06    8.06e-06   1.45e-04   3.32e-05 4.24e-06   8.54e-06    5.79e-05
+            Std.      9.19e-07    1.66e-04   7.09e-05   2.08e-04 2.01e-06   3.76e-04    1.29e-05
+Spacing     Best      1.42e-05    1.28e-05   5.99e-06   0.00e+00 1.05e-05   1.38e-05    1.48e-05
+            Median    1.79e-05    2.08e-05   1.15e-05   1.92e-05 1.45e-05   2.03e-05    2.14e-05
+            Std.      4.87e-06    5.77e-06   4.53e-06   9.72e-06 1.87e-06   3.84e-05    4.18e-06
+MaxSpread   Best      4.17e-03    4.23e-03   4.29e-03   2.63e-03 3.36e-03   1.16e-02    3.49e-03
+            Median    3.93e-03    3.94e-03   2.96e-03   2.20e-03 2.88e-03   4.01e-03    2.91e-03
+            Std.      1.21e-04    5.39e-04   5.48e-04   4.65e-04 2.54e-04   1.15e-03    2.47e-04
+Delta       Best      3.87e-01    3.99e-01   3.17e-01   8.40e-01 6.09e-01   3.99e-01    6.80e-01
+            Median    4.42e-01    4.81e-01   5.58e-01   9.34e-01 6.81e-01   4.55e-01    7.62e-01
+            Std.      6.09e-02    9.05e-02   1.00e-01   3.55e-02 2.94e-02   1.42e-01    6.18e-02
+IGD         Best      1.72e-05    1.90e-05   7.90e-05   1.77e-04 4.64e-05   1.84e-05    7.01e-05
+            Median    2.47e-05    2.73e-05   2.23e-04   2.41e-04 9.69e-05   2.75e-05    1.46e-04
+            Std.      7.05e-06    4.09e-04   6.95e-05   5.29e-04 3.67e-05   2.84e-05    5.09e-05
+Hypervolume Best      3.94e-05    3.94e-05   3.91e-05   3.78e-05 3.82e-05   5.52e-05    3.86e-05
+            Median    3.94e-05    3.94e-05   3.73e-05   3.57e-05 3.68e-05   3.94e-05    3.80e-05
+            Std.      1.06e-08    4.14e-06   1.34e-06   5.16e-06 5.74e-07   2.67e-06    4.40e-07

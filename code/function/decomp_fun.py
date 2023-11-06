@@ -50,3 +50,4 @@ def to_update(M_y, V_y, M_k, V_k, w, zk):
         return True
     else:
         return False
+        
